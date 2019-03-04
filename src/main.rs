@@ -32,6 +32,7 @@ fn create_url<'a>(redirect: &'a str, sid: &'a str) -> String {
 
 fn index(req: &HttpRequest) -> Result<HttpResponse> {
     if let Some(_discord_token) = req.session().get::<String>("code")? {
+        req.session().remove("sid");
 
         Ok(HttpResponse::build(http::StatusCode::OK)
             .content_type("text/html")
