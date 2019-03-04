@@ -1,0 +1,12 @@
+<html>
+<body>
+    {% if username.is_empty() %}
+    <form action="/post" method="post">
+        <input type="text" name="username"></input>
+        <input type="submit">
+    </form>
+    {% else %}
+    <p>Hi <strong>{{ username }}</strong></p>
+    {% endif %}
+</body>
+</html>
