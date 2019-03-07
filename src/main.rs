@@ -29,17 +29,18 @@ use crate::form_types::*;
 use crate::templates::*;
 
 
-trait ReplyTo {
-    fn reply(&self, status: http::StatusCode, message: String) -> Box<Future<Item = HttpResponse, Error = Error>>;
+trait ReplyTo<T> {
+    fn reply(&self, status: http::StatusCode, message: T) -> Box<Future<Item = HttpResponse, Error = Error>>;
 }
 
 
-impl ReplyTo for HttpRequest<AppState> {
-    fn reply(&self, status: http::StatusCode, message: String) -> Box<Future<Item = HttpResponse, Error = Error>> {
+impl<T: 'static> ReplyTo<T> for HttpRequest<AppState> 
+    where T: std::fmt::Display, actix_web::Binary: std::convert::From<T> {
+    fn reply(&self, status: http::StatusCode, message: T) -> Box<Future<Item = HttpResponse, Error = Error>> {
         Box::new(self.body().map_err(Error::from).map(move |_f| {
             HttpResponse::build(status)
                 .content_type("text/html")
-                .body(&message)
+                .body(message)
             }))
     }
 }
@@ -153,7 +154,7 @@ fn oauth((query, req): (Query<OAuthQuery>, HttpRequest<AppState>)) -> Box<Future
 <h1>403 Forbidden</h1>
 You have not been logged in.<br>
 OAuth state check failed. Did you mess with the session storage?
-<a href="/">Return home</a>"#.to_string())
+<a href="/">Return home</a>"#)
         }
     }
     else {
@@ -163,7 +164,7 @@ OAuth state check failed. Did you mess with the session storage?
     Session token is missing
     <a href="/">Return home</a>
 </body>
-</html>"#.to_string())
+</html>"#)
     }
 }
 
