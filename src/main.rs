@@ -13,74 +13,41 @@ extern crate urlencoding;
 
 use actix_web::{server, http, App, HttpResponse, Result, Query, client, AsyncResponder, Error, HttpMessage, HttpRequest};
 use actix_web::middleware::session::{RequestSession, SessionStorage, CookieSessionBackend};
-use askama::Template;
 use sha2::{Sha512Trunc224 as Sha, Digest};
 use std::time::{SystemTime, UNIX_EPOCH};
 use std::env;
 use std::u8;
+use askama::Template;
 use base64::{encode as b64encode};
 use urlencoding::encode as uencode;
 use futures::Future;
+
+mod form_types;
+mod templates;
+
+use crate::form_types::*;
+use crate::templates::*;
+
+
+trait ReplyTo {
+    fn reply(&self, status: http::StatusCode, message: String) -> Box<Future<Item = HttpResponse, Error = Error>>;
+}
+
+
+impl ReplyTo for HttpRequest<AppState> {
+    fn reply(&self, status: http::StatusCode, message: String) -> Box<Future<Item = HttpResponse, Error = Error>> {
+        Box::new(self.body().map_err(Error::from).map(move |_f| {
+            HttpResponse::build(status)
+                .content_type("text/html")
+                .body(&message)
+            }))
+    }
+}
 
 
 const DISCORD_BASE: &str = "https://discordapp.com/api/v6";
 
 struct AppState;
-
-#[derive(Template)]
-#[template(path = "index.html")]
-struct IndexTemplate {
-    logged_in: bool,
-    user: String,
-    login_redir: String,
-}
-
-#[derive(Debug, Serialize)]
-struct TokenRequest {
-    client_id: String,
-    client_secret: String,
-    grant_type: String,
-    code: String,
-    redirect_uri: String,
-    scope: String,
-}
-
-impl TokenRequest {
-    fn new(code: String, redir: String) -> TokenRequest {
-        TokenRequest {
-            client_id: env::var("CLIENT_ID").expect("CLIENT_ID missing"),
-            client_secret: env::var("CLIENT_SECRET").expect("CLIENT_SECRET missing"),
-            grant_type: String::from("authorization_code"),
-            code: code,
-            redirect_uri: redir,
-            scope: String::from("identify guilds"),
-        }
-    }
-}
-
-#[derive(Deserialize)]
-struct OAuthQuery {
-    state: String,
-    code: String,
-}
-
-
-#[derive(Debug, Deserialize)]
-struct OAuthAccess {
-    access_token: String,
-    token_type: String,
-    expires_in: u32,
-    refresh_token: String,
-    scope: String,
-}
-
-#[derive(Deserialize)]
-struct DiscordUser {
-    id: String,
-    username: String,
-    discriminator: String,
-}
-
 
 fn create_auth_url<'a>(redirect: &'a str, sid: &'a str) -> String {
     format!("{}/oauth2/authorize?response_type=code&client_id={}&scope=identify%20guilds&redirect_uri={}&state={}", DISCORD_BASE, env::var("CLIENT_ID").unwrap(), uencode(redirect), uencode(sid))
@@ -115,11 +82,7 @@ fn index(req: HttpRequest<AppState>) -> Box<Future<Item = HttpResponse, Error = 
     }
     else {
         let i = IndexTemplate { logged_in: false, user: String::from(""), login_redir: req.url_for_static("login").unwrap().to_string() };
-        Box::new(req.body().map_err(Error::from).map(move |_f| {
-            HttpResponse::Ok()
-                .content_type("text/html")
-                .body(i.render().unwrap())
-            }))
+        req.reply(http::StatusCode::OK, i.render().unwrap())
     }
 }
 
@@ -186,20 +149,21 @@ fn oauth((query, req): (Query<OAuthQuery>, HttpRequest<AppState>)) -> Box<Future
                 .responder()
         }
         else {
-            Box::new(req.body().map_err(Error::from).map(move |_f| {
-                HttpResponse::build(http::StatusCode::OK)
-                    .content_type("text/html")
-                    .body(r#"OAuth state check failed. Did you mess with the session storage? <a href="/">Return home</a>"#)
-                }))
+            req.reply(http::StatusCode::FORBIDDEN, r#"
+<h1>403 Forbidden</h1>
+You have not been logged in.<br>
+OAuth state check failed. Did you mess with the session storage?
+<a href="/">Return home</a>"#.to_string())
         }
     }
     else {
-        Box::new(req.body().map_err(Error::from).map(move |_f| {
-            HttpResponse::build(http::StatusCode::from_u16(303).unwrap())
-                .header("Location", req.url_for_static("index").unwrap().as_str())
-                .content_type("text/plain")
-                .body("Session token is missing. Your browser will redirect you now.")
-            }))
+        req.reply(http::StatusCode::BAD_REQUEST, r#"<html>
+<body>
+    <h1>400 Bad Request</h1>
+    Session token is missing
+    <a href="/">Return home</a>
+</body>
+</html>"#.to_string())
     }
 }
 
