@@ -81,42 +81,15 @@ fn create_auth_url<'a>(redirect: &'a str, sid: &'a str) -> String {
 }
 
 fn index(req: HttpRequest<AppState>) -> Box<Future<Item = HttpResponse, Error = Error>> {
+    let login_url = req.url_for_static("login").unwrap().to_string();
+    
     if let Some(discord_token) = req.session().get::<String>("access_token").unwrap() {
-
-        let login_url = req.url_for_static("login").unwrap().to_string();
-        let session = req.session();
-
-        client::ClientRequest::get(&format!("{}/users/@me", DISCORD_BASE))
-            .header("Authorization", format!("Bearer {}", discord_token).as_str())
-            .finish().unwrap()
-            .send()
-            .map_err(|m| {
-                println!("{:?}", m);
-                Error::from(m)
-            })
-            .and_then(
-                move |resp| {
-                    resp.json::<DiscordUser>()
-                        .map_err(|m| {
-                            println!("{:?}", m);
-                            Error::from(m)
-                        })
-                        .and_then(
-                            move |user| {
-                                session.set("client_id", user.id.parse::<u64>().unwrap()).unwrap();
-
-                                let i = IndexTemplate { logged_in: true, user: user.username.clone(), login_redir: login_url };
-
-                                Ok(HttpResponse::Ok()
-                                    .content_type("text/html")
-                                    .body(i.render().unwrap()))
-                        })
-                })
-            .responder()
+        let i = IndexTemplate { logged_in: true, user: String::from("wefwefewfe"), login_redir: login_url };
+        req.reply(http::StatusCode::OK, i.render().unwrap())
 
     }
     else {
-        let i = IndexTemplate { logged_in: false, user: String::from(""), login_redir: req.url_for_static("login").unwrap().to_string() };
+        let i = IndexTemplate { logged_in: false, user: String::from(""), login_redir: login_url };
         req.reply(http::StatusCode::OK, i.render().unwrap())
     }
 }
@@ -156,16 +129,53 @@ fn get_all_guilds(req: HttpRequest<AppState>) -> Box<Future<Item = HttpResponse,
                                             params!{"u" => &client_id, "g" => &guild.id, "n" => &guild.name}).unwrap();
                                     });
 
-                                Ok(HttpResponse::Ok()
-                                    .content_type("text/html")
+                                Ok(HttpResponse::SeeOther()
+                                    .header("Location", req.url_for_static("index").unwrap().as_str())
                                     .body(""))
                             })
                 })
             .responder()
     }
     else {
-        req.reply(http::StatusCode::OK, "")
+        let index_url = req.url_for_static("index").unwrap();
+        req.reply_builder(http::StatusCode::SEE_OTHER, move |mut r| r
+            .header("Location", index_url.as_str())
+            .content_type("text/plain")
+            .body("")
+        )
     }
+}
+
+
+fn get_user_data(req: HttpRequest<AppState>) -> Box<Future<Item = HttpResponse, Error = Error>> {
+    let discord_token: String = req.session().get("access_token").unwrap().unwrap();
+
+    client::ClientRequest::get(&format!("{}/users/@me", DISCORD_BASE))
+        .header("Authorization", format!("Bearer {}", discord_token).as_str())
+        .finish().unwrap()
+        .send()
+        .map_err(|m| {
+            println!("{:?}", m);
+            Error::from(m)
+        })
+        .and_then(
+            move |resp| {
+                resp.json::<DiscordUser>()
+                    .map_err(|m| {
+                        println!("{:?}", m);
+                        Error::from(m)
+                    })
+                    .and_then(
+                        move |user| {
+                            req.session().set("client_id", user.id.parse::<u64>().unwrap()).unwrap();
+
+                            Ok(HttpResponse::SeeOther()
+                                .header("Location", req.url_for_static("sync").unwrap().as_str())
+                                .content_type("text/html")
+                                .body(""))
+                    })
+            })
+        .responder()
 }
 
 
@@ -220,7 +230,7 @@ fn oauth((query, req): (Query<OAuthQuery>, HttpRequest<AppState>)) -> Box<Future
                                 req.session().set("access_token", body.access_token.clone()).unwrap();
 
                                 Ok(HttpResponse::build(http::StatusCode::SEE_OTHER)
-                                    .header("Location", req.url_for_static("index").unwrap().as_str())
+                                    .header("Location", req.url_for_static("sync_user").unwrap().as_str())
                                     .content_type("text/plain")
                                     .body("You have been logged in. Your browser will redirect you now."))
                             })
@@ -259,11 +269,23 @@ fn main() {
                 )
             .resource("/", |r| {
                 r.name("index");
-                r.method(http::Method::GET).with(index)
+                r.method(http::Method::GET)
+                .with(index)
             })
             .resource("/login", |r| {
                 r.name("login");
-                r.method(http::Method::GET).f(login)
+                r.method(http::Method::GET)
+                .f(login)
+            })
+            .resource("/sync_guilds", |r| {
+                r.name("sync");
+                r.method(http::Method::GET)
+                .with(get_all_guilds)
+            })
+            .resource("/sync_user", |r| {
+                r.name("sync_user");
+                r.method(http::Method::GET)
+                .with(get_user_data)
             })
             .resource("/oauth", |r| {
                 r.name("oauth");
