@@ -46,3 +46,10 @@ pub struct DiscordUser {
     pub username: String,
     pub discriminator: String,
 }
+
+#[derive(Deserialize)]
+pub struct DiscordGuild {
+    pub id: String,
+    pub name: String,
+    pub permissions: u16,
+}

@@ -2,6 +2,7 @@ extern crate actix;
 extern crate actix_web;
 extern crate askama;
 
+#[macro_use]
 extern crate mysql;
 extern crate dotenv;
 
@@ -19,7 +20,7 @@ use actix_web::dev::HttpResponseBuilder;
 use actix_web::middleware::session::{RequestSession, SessionStorage, CookieSessionBackend};
 use sha2::{Sha512Trunc224 as Sha, Digest};
 use std::time::{SystemTime, UNIX_EPOCH};
-use std::{env, u8, cell::Cell};
+use std::{env, u8};
 use askama::Template;
 use base64::{encode as b64encode};
 use urlencoding::encode as uencode;
@@ -67,8 +68,12 @@ impl<F: 'static> ReplyBuilder<F> for HttpRequest<AppState>
 
 const DISCORD_BASE: &str = "https://discordapp.com/api/v6";
 
+const ADMINISTRATOR: u16 = 0x8;
+const MANAGE_CHANNELS: u16 = 0x10;
+const MANAGE_GUILD: u16 = 0x20;
+
 struct AppState {
-    database: Cell<mysql::Pool>,
+    database: mysql::Pool,
 }
 
 fn create_auth_url<'a>(redirect: &'a str, sid: &'a str) -> String {
@@ -78,38 +83,91 @@ fn create_auth_url<'a>(redirect: &'a str, sid: &'a str) -> String {
 fn index(req: HttpRequest<AppState>) -> Box<Future<Item = HttpResponse, Error = Error>> {
     if let Some(discord_token) = req.session().get::<String>("access_token").unwrap() {
 
+        let login_url = req.url_for_static("login").unwrap().to_string();
+        let session = req.session();
+
         client::ClientRequest::get(&format!("{}/users/@me", DISCORD_BASE))
-        .header("Authorization", format!("Bearer {}", discord_token).as_str())
-        .finish().unwrap()
-        .send()
-        .map_err(|m| {
-            println!("{:?}", m);
-            Error::from(m)
-        })
-        .and_then(
-            move |resp| {
-                resp.json::<DiscordUser>()
-                    .map_err(|m| {
-                        println!("{:?}", m);
-                        Error::from(m)
-                    })
-                    .and_then(move |body| {
-                        req.session().set("client_id", body.id).unwrap();
-
-                        let i = IndexTemplate { logged_in: true, user: body.username.clone(), login_redir: req.url_for_static("login").unwrap().to_string() };
-
-                        Ok(HttpResponse::Ok()
-                            .content_type("text/html")
-                            .body(i.render().unwrap()))
-                    })
+            .header("Authorization", format!("Bearer {}", discord_token).as_str())
+            .finish().unwrap()
+            .send()
+            .map_err(|m| {
+                println!("{:?}", m);
+                Error::from(m)
             })
-        .responder()
+            .and_then(
+                move |resp| {
+                    resp.json::<DiscordUser>()
+                        .map_err(|m| {
+                            println!("{:?}", m);
+                            Error::from(m)
+                        })
+                        .and_then(
+                            move |user| {
+                                session.set("client_id", user.id.parse::<u64>().unwrap()).unwrap();
+
+                                let i = IndexTemplate { logged_in: true, user: user.username.clone(), login_redir: login_url };
+
+                                Ok(HttpResponse::Ok()
+                                    .content_type("text/html")
+                                    .body(i.render().unwrap()))
+                        })
+                })
+            .responder()
+
     }
     else {
         let i = IndexTemplate { logged_in: false, user: String::from(""), login_redir: req.url_for_static("login").unwrap().to_string() };
         req.reply(http::StatusCode::OK, i.render().unwrap())
     }
 }
+
+
+fn get_all_guilds(req: HttpRequest<AppState>) -> Box<Future<Item = HttpResponse, Error = Error>> {
+    let database = req.state().database.clone();
+    let discord_token: String = req.session().get("access_token").unwrap().unwrap();
+    let client_id: u64 = req.session().get("client_id").unwrap().unwrap();
+
+    let mut query = database.prep_exec("SELECT 1 FROM user_guilds WHERE user = :u AND cache_time < UNIX_TIMESTAMP()", params!{"u" => &client_id}).unwrap();
+
+    if query.next().is_some() {
+        database.prep_exec("DELETE FROM user_guilds WHERE user = :u", params!{"u" => &client_id}).unwrap();
+
+        client::ClientRequest::get(&format!("{}/users/@me/guilds", DISCORD_BASE))
+            .header("Authorization", format!("Bearer {}", discord_token).as_str())
+            .finish().unwrap()
+            .send()
+            .map_err(|m| {
+                println!("{:?}", m);
+                Error::from(m)
+            })
+            .and_then(
+                move |resp| {
+                    resp.json::<Vec<DiscordGuild>>()
+                        .map_err(|m| {
+                            println!("{:?}", m);
+                            Error::from(m)
+                        })
+                        .and_then(
+                            move |body| {
+                                body.iter()
+                                    .filter(|guild| (guild.permissions & ADMINISTRATOR) != 0 || (guild.permissions & MANAGE_GUILD) != 0 || (guild.permissions & MANAGE_CHANNELS) != 0)
+                                    .for_each(|guild| {
+                                        database.prep_exec("INSERT INTO user_guilds (user, guild, guild_name) VALUES (:u, :g, :n)",
+                                            params!{"u" => &client_id, "g" => &guild.id, "n" => &guild.name}).unwrap();
+                                    });
+
+                                Ok(HttpResponse::Ok()
+                                    .content_type("text/html")
+                                    .body(""))
+                            })
+                })
+            .responder()
+    }
+    else {
+        req.reply(http::StatusCode::OK, "")
+    }
+}
+
 
 fn login(req: &HttpRequest<AppState>) -> Box<Future<Item = HttpResponse, Error = Error>> {
     let start = SystemTime::now();
@@ -138,6 +196,7 @@ fn login(req: &HttpRequest<AppState>) -> Box<Future<Item = HttpResponse, Error =
         .body("Redirected")
     )
 }
+
 
 fn oauth((query, req): (Query<OAuthQuery>, HttpRequest<AppState>)) -> Box<Future<Item = HttpResponse, Error = Error>> {
     if let Some(ssid) = req.session().get::<String>("sid").unwrap() {
@@ -191,7 +250,7 @@ fn main() {
         let url = env::var("SQL_URL").expect("SQL URL environment variable missing");
         let mysql_conn = mysql::Pool::new(url).unwrap();
 
-        App::with_state(AppState { database: Cell::new(mysql_conn) })
+        App::with_state(AppState { database: mysql_conn })
             .middleware(
                 SessionStorage::new(
                     CookieSessionBackend::signed(&[0; 32])
