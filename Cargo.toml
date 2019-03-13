@@ -10,6 +10,7 @@ actix = "0.7"
 askama = "0.6"
 
 mysql = "14.2"
+dotenv = "0.10"
 
 futures = "0.1"
 

@@ -3,6 +3,7 @@ extern crate actix_web;
 extern crate askama;
 
 extern crate mysql;
+extern crate dotenv;
 
 extern crate futures;
 
@@ -23,6 +24,7 @@ use askama::Template;
 use base64::{encode as b64encode};
 use urlencoding::encode as uencode;
 use futures::Future;
+use dotenv::dotenv;
 
 mod form_types;
 mod templates;
@@ -183,6 +185,8 @@ fn oauth((query, req): (Query<OAuthQuery>, HttpRequest<AppState>)) -> Box<Future
 
 
 fn main() {
+    dotenv().ok();
+
     server::HttpServer::new(|| {
         let url = env::var("SQL_URL").expect("SQL URL environment variable missing");
         let mysql_conn = mysql::Pool::new(url).unwrap();
