@@ -27,10 +27,10 @@ use urlencoding::encode as uencode;
 use futures::Future;
 use dotenv::dotenv;
 
-mod form_types;
+mod models;
 mod templates;
 
-use crate::form_types::*;
+use crate::models::*;
 use crate::templates::*;
 
 
@@ -74,24 +74,27 @@ const MANAGE_CHANNELS: u32 = 0x10;
 
 const PERMISSION_CHECK: u32 = ADMINISTRATOR | MANAGE_GUILD | MANAGE_CHANNELS;
 
+
 struct AppState {
-    database: mysql::Pool,
+    database: mysql::Pool, // not in a cell; pool can be safely cloned to get a connection
 }
+
 
 fn create_auth_url<'a>(redirect: &'a str, sid: &'a str) -> String {
     format!("{}/oauth2/authorize?response_type=code&client_id={}&scope=identify%20guilds&redirect_uri={}&state={}", DISCORD_BASE, env::var("CLIENT_ID").unwrap(), uencode(redirect), uencode(sid))
 }
 
+
 fn index(req: HttpRequest<AppState>) -> Box<Future<Item = HttpResponse, Error = Error>> {
     let login_url = req.url_for_static("login").unwrap().to_string();
     
-    if let Some(discord_token) = req.session().get::<String>("access_token").unwrap() {
-        let i = IndexTemplate { logged_in: true, user: String::from("wefwefewfe"), login_redir: login_url };
+    if req.session().get::<String>("access_token").unwrap().is_some() {
+        let i = IndexTemplate { logged_in: true, channels: vec![], login_redir: login_url };
         req.reply(http::StatusCode::OK, i.render().unwrap())
 
     }
     else {
-        let i = IndexTemplate { logged_in: false, user: String::from(""), login_redir: login_url };
+        let i = IndexTemplate { logged_in: false, channels: vec![], login_redir: login_url };
         req.reply(http::StatusCode::OK, i.render().unwrap())
     }
 }

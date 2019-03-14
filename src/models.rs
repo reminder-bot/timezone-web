@@ -53,3 +53,10 @@ pub struct DiscordGuild {
     pub name: String,
     pub permissions: u32,
 }
+
+pub struct ClockChannel {
+    pub guild: String,
+    pub id: String,
+    pub timezone: String,
+    pub name: String,
+}

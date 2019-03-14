@@ -1,11 +1,12 @@
 use askama::Template;
 
+use crate::models::ClockChannel;
 
 #[derive(Template)]
 #[template(path = "index.html")]
 pub struct IndexTemplate {
     pub logged_in: bool,
-    pub user: String,
+    pub channels: Vec<ClockChannel>,
     pub login_redir: String,
 }
 
