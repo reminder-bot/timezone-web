@@ -68,9 +68,11 @@ impl<F: 'static> ReplyBuilder<F> for HttpRequest<AppState>
 
 const DISCORD_BASE: &str = "https://discordapp.com/api/v6";
 
-const ADMINISTRATOR: u16 = 0x8;
-const MANAGE_CHANNELS: u16 = 0x10;
-const MANAGE_GUILD: u16 = 0x20;
+const ADMINISTRATOR: u32 = 0x8;
+const MANAGE_GUILD: u32 = 0x20;
+const MANAGE_CHANNELS: u32 = 0x10;
+
+const PERMISSION_CHECK: u32 = ADMINISTRATOR | MANAGE_GUILD | MANAGE_CHANNELS;
 
 struct AppState {
     database: mysql::Pool,
@@ -100,9 +102,9 @@ fn get_all_guilds(req: HttpRequest<AppState>) -> Box<Future<Item = HttpResponse,
     let discord_token: String = req.session().get("access_token").unwrap().unwrap();
     let client_id: u64 = req.session().get("client_id").unwrap().unwrap();
 
-    let mut query = database.prep_exec("SELECT 1 FROM user_guilds WHERE user = :u AND cache_time < UNIX_TIMESTAMP()", params!{"u" => &client_id}).unwrap();
+    let mut query = database.prep_exec("SELECT 1 FROM user_guilds WHERE user = :u AND cache_time > UNIX_TIMESTAMP()", params!{"u" => &client_id}).unwrap();
 
-    if query.next().is_some() {
+    if query.next().is_none() {
         database.prep_exec("DELETE FROM user_guilds WHERE user = :u", params!{"u" => &client_id}).unwrap();
 
         client::ClientRequest::get(&format!("{}/users/@me/guilds", DISCORD_BASE))
@@ -122,8 +124,10 @@ fn get_all_guilds(req: HttpRequest<AppState>) -> Box<Future<Item = HttpResponse,
                         })
                         .and_then(
                             move |body| {
+                                println!("{:?}", body);
+
                                 body.iter()
-                                    .filter(|guild| (guild.permissions & ADMINISTRATOR) != 0 || (guild.permissions & MANAGE_GUILD) != 0 || (guild.permissions & MANAGE_CHANNELS) != 0)
+                                    .filter(|guild| (guild.permissions & PERMISSION_CHECK) != 0)
                                     .for_each(|guild| {
                                         database.prep_exec("INSERT INTO user_guilds (user, guild, guild_name) VALUES (:u, :g, :n)",
                                             params!{"u" => &client_id, "g" => &guild.id, "n" => &guild.name}).unwrap();
