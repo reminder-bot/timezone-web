@@ -91,12 +91,15 @@ fn index(req: HttpRequest<AppState>) -> Box<Future<Item = HttpResponse, Error = 
     if let Some(client_id) = req.session().get::<u64>("client_id").unwrap() {
         let database = req.state().database.clone();
 
-        let query = database.prep_exec("SELECT channel, timezone, name, guild FROM clocks WHERE guild IN (SELECT guild FROM user_guilds WHERE user = :u)", params!{"u" => client_id}).unwrap();
+        let query = database.prep_exec(r#"
+SELECT clocks.channel, clocks.timezone, clocks.name, clocks.guild, user_guilds.guild_name 
+FROM clocks, user_guilds
+WHERE user_guilds.user = :u AND clocks.guild = user_guilds.guild"#, params!{"u" => client_id}).unwrap();
 
         let clocks = query.into_iter().map(|row| {
-            let (channel, timezone, name, guild) = mysql::from_row::<(u64, String, String, u64)>(row.unwrap());
+            let (channel, timezone, name, _guild, guild_name) = mysql::from_row::<(u64, String, String, u64, String)>(row.unwrap());
 
-            ClockChannel { id: channel, timezone: timezone, name: name, guild: guild }
+            ClockChannel { id: channel, timezone: timezone, name: name, guild: guild_name }
         }).collect();
 
         let i = IndexTemplate { logged_in: true, channels: clocks, login_redir: login_url };
