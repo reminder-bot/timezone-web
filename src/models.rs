@@ -55,8 +55,8 @@ pub struct DiscordGuild {
 }
 
 pub struct ClockChannel {
-    pub guild: String,
-    pub id: String,
+    pub guild: u64,
+    pub id: u64,
     pub timezone: String,
     pub name: String,
 }

@@ -88,8 +88,18 @@ fn create_auth_url<'a>(redirect: &'a str, sid: &'a str) -> String {
 fn index(req: HttpRequest<AppState>) -> Box<Future<Item = HttpResponse, Error = Error>> {
     let login_url = req.url_for_static("login").unwrap().to_string();
     
-    if req.session().get::<String>("access_token").unwrap().is_some() {
-        let i = IndexTemplate { logged_in: true, channels: vec![], login_redir: login_url };
+    if let Some(client_id) = req.session().get::<u64>("client_id").unwrap() {
+        let database = req.state().database.clone();
+
+        let query = database.prep_exec("SELECT channel, timezone, name, guild FROM clocks WHERE guild IN (SELECT guild FROM user_guilds WHERE user = :u)", params!{"u" => client_id}).unwrap();
+
+        let clocks = query.into_iter().map(|row| {
+            let (channel, timezone, name, guild) = mysql::from_row::<(u64, String, String, u64)>(row.unwrap());
+
+            ClockChannel { id: channel, timezone: timezone, name: name, guild: guild }
+        }).collect();
+
+        let i = IndexTemplate { logged_in: true, channels: clocks, login_redir: login_url };
         req.reply(http::StatusCode::OK, i.render().unwrap())
 
     }
