@@ -60,6 +60,12 @@ pub struct DiscordChannel {
     pub name: String,
 }
 
+#[derive(Deserialize, Debug, Serialize)]
+pub struct DiscordChannelCreator {
+    pub name: String,
+    pub r#type: u8,
+}
+
 #[derive(Deserialize, Debug)]
 pub struct DeleteChannel {
     pub id: u64,
@@ -67,9 +73,9 @@ pub struct DeleteChannel {
 
 #[derive(Deserialize, Debug)]
 pub struct CreateChannel {
-    pub name: String,
+    pub guild: String,
     pub timezone: String,
-    pub guild: u64,
+    pub name: String,
 }
 
 pub struct ClockChannel {

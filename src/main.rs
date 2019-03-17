@@ -171,7 +171,7 @@ fn create_channel((req, create_form): (HttpRequest<AppState>, Form<CreateChannel
 
         client::ClientRequest::post(&format!("{}/guilds/{}/channels", DISCORD_BASE, create_form.guild))
             .header("Authorization", format!("Bot {}", env::var("BOT_TOKEN").unwrap()).as_str())
-            .finish().unwrap()
+            .json(DiscordChannelCreator { name: create_form.name.clone(), r#type: 2 }).unwrap()
             .send()
             .map_err(|m| {
                 println!("{:?}", m);
@@ -233,8 +233,6 @@ fn get_all_guilds(req: HttpRequest<AppState>) -> Box<Future<Item = HttpResponse,
                         })
                         .and_then(
                             move |body| {
-                                println!("{:?}", body);
-
                                 body.iter()
                                     .filter(|guild| (guild.permissions & PERMISSION_CHECK) != 0)
                                     .for_each(|guild| {
