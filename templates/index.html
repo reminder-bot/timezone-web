@@ -3,7 +3,7 @@
     {% if logged_in %}
     <p>Clock Channels in your guilds:</p>
     {% for channel in channels %}
-        <form method="POST" action="{{ form_redir }}">
+        <form method="POST" action="{{ delete_redir }}">
             <div style="border: 4px solid black">
                 <p>Guild: {{ channel.guild }}</p>
                 <p>ID: {{ channel.id }}</p>
@@ -14,6 +14,29 @@
             </div>
         </form>
     {% endfor %}
+
+    <form method="POST" action="{{ create_redir }}">
+        <div>
+            <p>Select a guild:</p>
+            <select name="guild" required>
+                {% for guild in guilds %}
+                <option value="{{ guild.id }}">{{ guild.name }}</option>
+                {% endfor %}
+            </select>
+            <p>Select a timezone:</p>
+            <select name="timezone" required>
+                {% for tz in timezones %}
+                <option value="{{ tz }}">{{ tz }}</option>
+                {% endfor %}
+            </select>
+
+            <p>Choose a name/formatting:</p>
+            <input name="name" type="text" required></input>
+
+            <input type="submit" value="Create Channel"></input>
+        </div>
+    </form>
+
     {% else %}
     <a href="{{ login_redir }}">Log in with Discord</a>
     {% endif %}

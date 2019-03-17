@@ -55,6 +55,12 @@ pub struct DiscordGuild {
 }
 
 #[derive(Deserialize, Debug)]
+pub struct DiscordChannel {
+    pub id: String,
+    pub name: String,
+}
+
+#[derive(Deserialize, Debug)]
 pub struct DeleteChannel {
     pub id: u64,
 }
