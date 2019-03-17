@@ -15,9 +15,19 @@ extern crate sha2;
 extern crate base64;
 extern crate urlencoding;
 
-use actix_web::{server, http, App, HttpResponse, Query, client, AsyncResponder, Error, HttpMessage, HttpRequest, Form};
-use actix_web::dev::HttpResponseBuilder;
-use actix_web::middleware::session::{RequestSession, SessionStorage, CookieSessionBackend};
+extern crate env_logger;
+
+use actix_web::{
+    server, http, App, HttpResponse, Query, client, AsyncResponder, Error, HttpMessage, HttpRequest, Form,
+    dev::HttpResponseBuilder,
+    middleware::{
+        Logger, ErrorHandlers,
+        session::{
+            RequestSession, SessionStorage, CookieSessionBackend
+        },
+    },
+};
+
 use sha2::{Sha512Trunc224 as Sha, Digest};
 use std::time::{SystemTime, UNIX_EPOCH};
 use std::{env, u8};
@@ -310,6 +320,9 @@ fn oauth((query, req): (Query<OAuthQuery>, HttpRequest<AppState>)) -> Box<Future
 fn main() {
     dotenv().ok();
 
+    std::env::set_var("RUST_LOG", "actix_web=info");
+    env_logger::init();
+
     server::HttpServer::new(|| {
         let url = env::var("SQL_URL").expect("SQL URL environment variable missing");
         let mysql_conn = mysql::Pool::new(url).unwrap();
@@ -321,6 +334,8 @@ fn main() {
                         .secure(false)
                     )
                 )
+            .middleware(Logger::default())
+            .middleware(Logger::new("%a %{User-Agent}i"))
             .resource("/", |r| {
                 r.name("index");
                 r.method(http::Method::GET)
