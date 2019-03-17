@@ -15,7 +15,7 @@ extern crate sha2;
 extern crate base64;
 extern crate urlencoding;
 
-use actix_web::{server, http, App, HttpResponse, Query, client, AsyncResponder, Error, HttpMessage, HttpRequest};
+use actix_web::{server, http, App, HttpResponse, Query, client, AsyncResponder, Error, HttpMessage, HttpRequest, Form};
 use actix_web::dev::HttpResponseBuilder;
 use actix_web::middleware::session::{RequestSession, SessionStorage, CookieSessionBackend};
 use sha2::{Sha512Trunc224 as Sha, Digest};
@@ -87,6 +87,7 @@ fn create_auth_url<'a>(redirect: &'a str, sid: &'a str) -> String {
 
 fn index(req: HttpRequest<AppState>) -> Box<Future<Item = HttpResponse, Error = Error>> {
     let login_url = req.url_for_static("login").unwrap().to_string();
+    let form_redir = req.url_for_static("delete_channel").unwrap().to_string();
     
     if let Some(client_id) = req.session().get::<u64>("client_id").unwrap() {
         let database = req.state().database.clone();
@@ -102,16 +103,49 @@ WHERE user_guilds.user = :u AND clocks.guild = user_guilds.guild"#, params!{"u" 
             ClockChannel { id: channel, timezone: timezone, name: name, guild: guild_name }
         }).collect();
 
-        let i = IndexTemplate { logged_in: true, channels: clocks, login_redir: login_url };
+        let i = IndexTemplate { logged_in: true, channels: clocks, login_redir: login_url, form_redir: form_redir };
         req.reply(http::StatusCode::OK, i.render().unwrap())
 
     }
     else {
-        let i = IndexTemplate { logged_in: false, channels: vec![], login_redir: login_url };
+        let i = IndexTemplate { logged_in: false, channels: vec![], login_redir: login_url, form_redir: form_redir };
         req.reply(http::StatusCode::OK, i.render().unwrap())
     }
 }
 
+
+fn delete_channel((req, delete_form): (HttpRequest<AppState>, Form<DeleteChannel>)) -> Box<Future<Item = HttpResponse, Error = Error>> {
+    let index_url = req.url_for_static("index").unwrap();
+
+    if let Some(client_id) = req.session().get::<u64>("client_id").unwrap() {
+        let database = req.state().database.clone();
+        let clock_id = delete_form.id;
+
+        database.prep_exec(r#"
+DELETE FROM clocks 
+WHERE 
+    channel = :id AND 
+    guild IN (SELECT guild FROM user_guilds WHERE user = :u)"#, params!{"id" => clock_id, "u" => client_id}).unwrap();
+
+        req.reply_builder(http::StatusCode::SEE_OTHER, move |mut r| r
+            .header("Location", index_url.as_str())
+            .content_type("text/plain")
+            .body(""))
+    }
+    else {
+        req.reply_builder(http::StatusCode::SEE_OTHER, move |mut r| r
+            .header("Location", index_url.as_str())
+            .content_type("text/plain")
+            .body(""))
+    }
+}
+
+
+/*
+fn create_channel(req: HttpRequest<AppState>) -> Box<Future<Item = HttpResponse, Error = Error>> {
+
+}
+*/
 
 fn get_all_guilds(req: HttpRequest<AppState>) -> Box<Future<Item = HttpResponse, Error = Error>> {
     let database = req.state().database.clone();
@@ -311,6 +345,11 @@ fn main() {
                 r.name("oauth");
                 r.method(http::Method::GET)
                 .with(oauth)
+            })
+            .resource("/delete_channel", |r| {
+                r.name("delete_channel");
+                r.method(http::Method::POST)
+                .with(delete_channel)
             })
             .finish()
 

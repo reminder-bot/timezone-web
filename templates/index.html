@@ -3,12 +3,16 @@
     {% if logged_in %}
     <p>Clock Channels in your guilds:</p>
     {% for channel in channels %}
-        <div style="border: 4px solid black">
-            <p>Guild: {{ channel.guild }}</p>
-            <p>ID: {{ channel.id }}</p>
-            <p>Timezone: {{ channel.timezone }}</p>
-            <p>Formatting: {{ channel.name }}</p>
-        </div>
+        <form method="POST" action="{{ form_redir }}">
+            <div style="border: 4px solid black">
+                <p>Guild: {{ channel.guild }}</p>
+                <p>ID: {{ channel.id }}</p>
+                <p>Timezone: {{ channel.timezone }}</p>
+                <p>Formatting: {{ channel.name }}</p>
+                <input type="hidden" name="id" value="{{ channel.id }}"></input>
+                <input type="submit" value="Delete Clock"></input>
+            </div>
+        </form>
     {% endfor %}
     {% else %}
     <a href="{{ login_redir }}">Log in with Discord</a>

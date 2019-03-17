@@ -8,6 +8,7 @@ pub struct IndexTemplate {
     pub logged_in: bool,
     pub channels: Vec<ClockChannel>,
     pub login_redir: String,
+    pub form_redir: String,
 }
 
 #[derive(Template)]

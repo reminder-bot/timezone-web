@@ -54,6 +54,18 @@ pub struct DiscordGuild {
     pub permissions: u32,
 }
 
+#[derive(Deserialize, Debug)]
+pub struct DeleteChannel {
+    pub id: u64,
+}
+
+#[derive(Deserialize, Debug)]
+pub struct CreateChannel {
+    pub name: String,
+    pub timezone: String,
+    pub guild: u64,
+}
+
 pub struct ClockChannel {
     pub guild: String,
     pub id: u64,
