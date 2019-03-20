@@ -45,6 +45,15 @@
             </select>
             <p>Select a timezone:</p>
 
+            <noscript>
+                <select name="timezone">
+                    {% for tz in timezones %}
+                    <option value="{{ tz }}">{{ tz }}</option>
+                    {% endfor %}
+                </select>
+                <p>If you want to use the interactive timezone selector, please disable noscript</p>
+            </noscript>
+
             <div id="map">
             </div>
 

@@ -168,36 +168,54 @@ WHERE
 fn create_channel((req, create_form): (HttpRequest<AppState>, Form<CreateChannel>)) -> Box<Future<Item = HttpResponse, Error = Error>> {
     let index_url = req.url_for_static("index").unwrap();
 
-    if let Some(_client_id) = req.session().get::<u64>("client_id").unwrap() {
+    if let Some(client_id) = req.session().get::<u64>("client_id").unwrap() {
         let database = req.state().database.clone();
 
-        client::ClientRequest::post(&format!("{}/guilds/{}/channels", DISCORD_BASE, create_form.guild))
-            .header("Authorization", format!("Bot {}", env::var("BOT_TOKEN").unwrap()).as_str())
-            .json(DiscordChannelCreator { name: create_form.name.clone(), r#type: 2 }).unwrap()
-            .send()
-            .map_err(|m| {
-                println!("{:?}", m);
-                Error::from(m)
-            })
-            .and_then(
-                move |resp| {
-                    resp.json::<DiscordChannel>()
+        let timezone = create_form.timezone.split(" ").nth(0).unwrap();
+
+        let mut guild_check = database.prep_exec("SELECT 1 FROM user_guilds WHERE user = :u AND guild = :g", params!{"u" => client_id, "g" => &create_form.guild}).unwrap();
+
+        match guild_check.next() {
+            Some(_) => {
+                if !TIMEZONES.contains(&timezone) {
+                    req.reply(http::StatusCode::BAD_REQUEST, "<html><h1>400 Bad Request</h1></html>")
+                }
+                else {
+                    client::ClientRequest::post(&format!("{}/guilds/{}/channels", DISCORD_BASE, create_form.guild))
+                        .header("Authorization", format!("Bot {}", env::var("BOT_TOKEN").unwrap()).as_str())
+                        .json(DiscordChannelCreator { name: create_form.name.clone(), r#type: 2 }).unwrap()
+                        .send()
                         .map_err(|m| {
                             println!("{:?}", m);
                             Error::from(m)
                         })
                         .and_then(
-                            move |body| {
-                                database.prep_exec("INSERT INTO clocks (channel, timezone, name, guild) VALUES (:c, :t, :n, :g)",
-                                    params!{"c" => &body.id, "t" => &create_form.timezone, "n" => &create_form.name, "g" => &create_form.guild}
-                                ).unwrap();
+                            move |resp| {
+                                resp.json::<DiscordChannel>()
+                                    .map_err(|m| {
+                                        println!("{:?}", m);
+                                        Error::from(m)
+                                    })
+                                    .and_then(
+                                        move |body| {
+                                            database.prep_exec("INSERT INTO clocks (channel, timezone, name, guild) VALUES (:c, :t, :n, :g)",
+                                                params!{"c" => &body.id, "t" => &create_form.timezone, "n" => &create_form.name, "g" => &create_form.guild}
+                                            ).unwrap();
 
-                                Ok(HttpResponse::SeeOther()
-                                    .header("Location", req.url_for_static("index").unwrap().as_str())
-                                    .body(""))
+                                            Ok(HttpResponse::SeeOther()
+                                                .header("Location", req.url_for_static("index").unwrap().as_str())
+                                                .body(""))
+                                        })
                             })
-                })
-            .responder()
+                        .responder()
+                }
+
+            },
+
+            None => {
+                req.reply(http::StatusCode::FORBIDDEN, "<html><h1>403 Forbidden</h1></html>")
+            }
+        }
     }
     else {
         req.reply_builder(http::StatusCode::SEE_OTHER, move |mut r| r
