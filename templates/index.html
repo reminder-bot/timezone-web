@@ -1,4 +1,24 @@
 <html>
+<head>
+
+    <meta charset="UTF-8">
+
+    <script src="/static/jquery.js"></script>
+    <script src="/static/moment.js"></script>
+    <script src="/static/moment-timezone.js"></script>
+    <script src="/static/timezone-picker.min.js"></script>
+    <link rel="stylesheet" href="/static/timezone-picker.css"></link>
+
+    <style>
+.Cbox select {
+    background-color: #D8D8D8 !important;
+    color: #505559 !important;
+    font-size: small !important;
+}
+.timezone-map polygon[data-selected="true"] {fill: #496A84}.timezone-map polygon { fill: #BBB;}.timezone-map polygon.active {fill: #5A5A5A;}.timezone-map polygon:hover { cursor: pointer;}.Cbox .quickLink{width: 52%;float: right;padding-bottom: 11px;overflow-x: auto; white-space: nowrap;overflow-y: hidden;}.Cbox .quickLink span:hover {color:#FFF;background-color: #496A84;  cursor: pointer;}.Cbox select{width: 45%;float: left;height: 27px; padding: 0px 0px 0px 10px;}.Cbox .quickLink span.active {color: #FFF; background-color: #496A84;}.Cbox .quickLink span{ font-weight: 300; border-radius: 3px; color: #000; background-color: #FFF; border: solid 1px #CCC;margin-left: 10px;font-size: 9px;padding: 4px 6px 4px 6px;}
+    </style>
+
+</head>
 <body>
     {% if logged_in %}
     <p>Clock Channels in your guilds:</p>
@@ -24,11 +44,27 @@
                 {% endfor %}
             </select>
             <p>Select a timezone:</p>
-            <select name="timezone" required>
-                {% for tz in timezones %}
-                <option value="{{ tz }}">{{ tz }}</option>
-                {% endfor %}
-            </select>
+
+            <div id="map">
+            </div>
+
+            <script>
+$('#map').timezonePicker({
+    quickLink: [{
+        "PST": "PST",
+        "MST": "MST",
+        "CST": "CST",
+        "EST": "EST",
+        "GMT": "GMT",
+        "LONDON": "Europe/London"
+    }],
+    width: 1000,
+    showHoverText: false
+});
+            </script>
+            <script>
+$(".country-lov")[0].name = "timezone";
+            </script>
 
             <p>Choose a name/formatting:</p>
             <input name="name" type="text" required></input>

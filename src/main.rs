@@ -17,8 +17,10 @@ extern crate urlencoding;
 
 extern crate env_logger;
 
+extern crate chrono_tz;
+
 use actix_web::{
-    server, http, App, HttpResponse, Query, client, AsyncResponder, Error, HttpMessage, HttpRequest, Form, Result,
+    server, http, App, HttpResponse, Query, client, AsyncResponder, Error, HttpMessage, HttpRequest, Form, Result, fs,
     dev::HttpResponseBuilder,
     middleware::{
         Logger, ErrorHandlers, Response,
@@ -392,6 +394,8 @@ fn main() {
             .middleware(Logger::new("%a %{User-Agent}i"))
             .middleware(ErrorHandlers::new()
                 .handler(http::StatusCode::NOT_FOUND, render_404))
+
+            .handler("/static", fs::StaticFiles::new("static/").unwrap())
 
             .resource("/", |r| {
                 r.name("index");
