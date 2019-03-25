@@ -19,6 +19,8 @@ extern crate env_logger;
 
 extern crate chrono_tz;
 
+extern crate rand;
+
 use actix_web::{
     server, http, App, HttpResponse, Query, client, AsyncResponder, Error, HttpMessage, HttpRequest, Form, Result, fs,
     dev::HttpResponseBuilder,
@@ -30,14 +32,14 @@ use actix_web::{
     },
 };
 
-use sha2::{Sha512Trunc224 as Sha, Digest};
-use std::time::{SystemTime, UNIX_EPOCH};
 use std::{env, u8};
 use askama::Template;
 use base64::{encode as b64encode};
 use urlencoding::encode as uencode;
 use futures::Future;
 use dotenv::dotenv;
+use rand::thread_rng;
+use rand::Rng;
 
 mod models;
 mod templates;
@@ -90,6 +92,7 @@ const PERMISSION_CHECK: u32 = ADMINISTRATOR | MANAGE_GUILD | MANAGE_CHANNELS;
 
 struct AppState {
     database: mysql::Pool, // not in a cell; pool can be safely cloned to get a connection
+
 }
 
 
@@ -193,8 +196,9 @@ fn create_channel((req, create_form): (HttpRequest<AppState>, Form<CreateChannel
                             move |resp| {
                                 resp.json::<DiscordChannel>()
                                     .map_err(|m| {
-                                        println!("{:?}", m);
-                                        Error::from(m)
+                                        HttpResponse::SeeOther()
+                                            .header("Location", req.url_for_static("index").unwrap().as_str())
+                                            .body("Redirected").into()
                                     })
                                     .and_then(
                                         move |body| {
@@ -204,7 +208,7 @@ fn create_channel((req, create_form): (HttpRequest<AppState>, Form<CreateChannel
 
                                             Ok(HttpResponse::SeeOther()
                                                 .header("Location", req.url_for_static("index").unwrap().as_str())
-                                                .body(""))
+                                                .body("Redirected"))
                                         })
                             })
                         .responder()
@@ -311,19 +315,15 @@ fn get_user_data(req: HttpRequest<AppState>) -> Box<Future<Item = HttpResponse, 
 
 
 fn login(req: HttpRequest<AppState>) -> Box<Future<Item = HttpResponse, Error = Error>> {
-    let start = SystemTime::now();
-    let since_the_epoch = start.duration_since(UNIX_EPOCH)
-        .expect("Time went backwards");
+    let mut raw_bytes1: [u8; 32] = [0; 32];
+    let mut raw_bytes2: [u8; 32] = [0; 32];
 
-    let raw_bytes: [u8; 16] = unsafe { std::mem::transmute(since_the_epoch.as_millis()) };
+    thread_rng().fill(&mut raw_bytes1);
+    thread_rng().fill(&mut raw_bytes2);
 
-    let mut hasher = Sha::new();
-    hasher.input(raw_bytes);
+    let ssid = b64encode(&raw_bytes1) + &b64encode(&raw_bytes2);
 
-    let sid = &hasher.result()[..];
-    let ssid = b64encode(sid);
-
-    req.session().set("sid", &ssid).unwrap();
+    req.session().set("session_id", &ssid).unwrap();
     let url = req.url_for_static("oauth").unwrap();
 
     req.reply_builder(http::StatusCode::SEE_OTHER, move |mut h| h
@@ -340,7 +340,7 @@ fn login(req: HttpRequest<AppState>) -> Box<Future<Item = HttpResponse, Error = 
 
 
 fn oauth((query, req): (Query<OAuthQuery>, HttpRequest<AppState>)) -> Box<Future<Item = HttpResponse, Error = Error>> {
-    if let Some(ssid) = req.session().get::<String>("sid").unwrap() {
+    if let Some(ssid) = req.session().get::<String>("session_id").unwrap() {
         if ssid == query.state {
             let code = &query.code;
             let c = TokenRequest::new(code.clone(), req.url_for_static("oauth").unwrap().to_string());
