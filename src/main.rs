@@ -195,20 +195,26 @@ fn create_channel((req, create_form): (HttpRequest<AppState>, Form<CreateChannel
                         .and_then(
                             move |resp| {
                                 resp.json::<DiscordChannel>()
-                                    .map_err(|m| {
-                                        HttpResponse::SeeOther()
-                                            .header("Location", req.url_for_static("index").unwrap().as_str())
-                                            .body("Redirected").into()
-                                    })
-                                    .and_then(
-                                        move |body| {
-                                            database.prep_exec("INSERT INTO clocks (channel, timezone, name, guild) VALUES (:c, :t, :n, :g)",
-                                                params!{"c" => &body.id, "t" => &create_form.timezone, "n" => &create_form.name, "g" => &create_form.guild}
-                                            ).unwrap();
+                                    .then(
+                                        move |res| {
+                                            match res {
+                                                Ok(body) => {
+                                                    database.prep_exec("INSERT INTO clocks (channel, timezone, name, guild) VALUES (:c, :t, :n, :g)",
+                                                        params!{"c" => &body.id, "t" => &create_form.timezone, "n" => &create_form.name, "g" => &create_form.guild}
+                                                    ).unwrap();
 
-                                            Ok(HttpResponse::SeeOther()
-                                                .header("Location", req.url_for_static("index").unwrap().as_str())
-                                                .body("Redirected"))
+                                                    Ok(HttpResponse::SeeOther()
+                                                        .header("Location", index_url.as_str())
+                                                        .body("Redirected"))
+                                                },
+
+                                                Err(e) => {
+                                                    println!("{:?}", e);
+
+                                                    Ok(HttpResponse::Ok()
+                                                        .body("Bad things have happened"))
+                                                }
+                                            }
                                         })
                             })
                         .responder()
