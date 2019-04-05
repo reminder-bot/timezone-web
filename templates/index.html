@@ -7,6 +7,7 @@
     <script src="/static/js/moment.js"></script>
     <script src="/static/js/moment-timezone.js"></script>
     <script src="/static/js/timezone-picker.min.js"></script>
+    <script src="/static/js/moment-strftime.js"></script>
 
     <link rel="stylesheet" href="/static/css/timezone-picker.css"></link>
     <link rel="stylesheet" href="/static/css/bootstrap.min.css"></link>
@@ -22,14 +23,21 @@
 .form-elements {
     margin: 10px; padding: 10px; border-style: solid; border-color: black; border-radius: 2px; border-width: 1px; background-color: white;
 }
+
+.block {
+    margin: 10px; padding: 10px; border-style: solid; border-color: gray; border-radius: 2px; border-width: 1px; background-color: lightgray
+}
+
     </style>
 
 </head>
 <body>
     {% if logged_in %}
-    <br>
-    <h2>Clock channels in your guilds:</h2>
-    <div class="card-deck" style="margin: 10px; padding: 10px; border-style: solid; border-color: gray; border-radius: 2px; border-width: 1px; background-color: lightgray">
+    <div class="block">
+        <h2>Clock channels in your guilds:</h2>
+    </div>
+
+    <div class="card-deck block">
         {% for channel in channels %}
             <div class="card" style="max-width: 20rem; border-color: gray;">
                 <div class="card-header">
@@ -50,9 +58,12 @@
         {% endfor %}
     </div>
 
-    <h2>Create new channel:</h2>
+    <div class="block">
+        <h2>Create new channel:</h2>
+    </div>
+
     <form method="POST" action="{{ create_redir }}">
-        <div style="margin: 10px; padding: 10px; border-style: solid; border-color: gray; border-radius: 2px; border-width: 1px; background-color: lightgray">
+        <div class="block">
             <div class="form-group form-elements">
                 <label for="guild-select">Select a guild:</label>
                 <select id="guild-select" class="form-control" name="guild" required>
@@ -62,7 +73,7 @@
                 </select>
             </div>
 
-            <div class="form-group form-elements">
+            <div class="form-group form-elements" style="margin-bottom: 0; padding-bottom: 0;">
                 <p>Select a timezone:</p>
 
                 <noscript>
@@ -80,20 +91,30 @@
 
             <script>
 $('#map').timezonePicker({
-    quickLink: [{
-        "PST": "PST",
-        "MST": "MST",
-        "CST": "CST",
-        "EST": "EST",
-        "GMT": "GMT",
-        "LONDON": "Europe/London"
-    }],
-    width: 1000,
-    showHoverText: false
+    quickLink: [{}],
+    width: 500,
+    showHoverText: false,
+    selectClass: "country-lov form-control"
 });
             </script>
-            <script>
+
+            <div class="form-group form-elements">
+                <label for="name-formatting">Choose a name/formatting:</label>
+                <input id="name-formatting" name="name" type="text" autocomplete="off" class="form-control" value="%H:%M" maxlength="20" oninput="display_strftime()" data-emojiable="true" data-emoji-input="unicode" required></input>
+            </div>
+
+            <div class="form-group form-elements">
+                <label for="name-formatting"><em>This is how it'll look:</em></label>
+                <input id="display" type="text" class="form-control" maxlen="20" readonly></input>
+            </div>
+
+            <button type="submit" class="btn btn-primary">Create Channel</input>
+        </div>
+    </form>
+
+    <script>
 $(".country-lov")[0].name = "timezone";
+$(".country-lov")[0].id = "timezone-drop";
 
 const urlParams = new URLSearchParams(window.location.search);
 const error = urlParams.get('err');
@@ -106,16 +127,20 @@ if (error != null) {
     alert(`An error occured: ${error_map[error]}`)
 }
 
-            </script>
+function display_strftime() {
+    var tz = document.getElementById("timezone-drop").value;
 
-            <div class="form-group form-elements">
-                <label for="name-formating">Choose a name/formatting:</label>
-                <input id="name-formatting" name="name" type="text" value="%H:%M" maxlen="20" required></input>
-            </div>
+    var date = moment().tz(tz);
+    var format_string = document.getElementById("name-formatting").value;
+    var out = document.getElementById("display");
 
-            <button type="submit" class="btn btn-primary">Create Channel</input>
-        </div>
-    </form>
+    out.value = date.strftime(format_string);
+}
+
+display_strftime();
+$(".country-lov")[0].onchange = display_strftime;
+
+    </script>
 
     {% else %}
     <a href="{{ login_redir }}">Log in with Discord</a>
