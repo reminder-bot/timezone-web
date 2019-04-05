@@ -33,6 +33,10 @@
 </head>
 <body>
     {% if logged_in %}
+
+    <div id="errors">
+    </div>
+
     <div class="block">
         <h2>Clock channels in your guilds:</h2>
     </div>
@@ -120,11 +124,13 @@ const urlParams = new URLSearchParams(window.location.search);
 const error = urlParams.get('err');
 
 const error_map = {
-    "No perms": "No permissions to create channel. Is the bot in the guild, and if so has it got full permissions?"
+    "No perms": "No permissions to create channel. Is the bot in the guild, and if so has it got full permissions?",
+    "No timezone": "Timezone not found"
 }
 
 if (error != null) {
-    alert(`An error occured: ${error_map[error]}`)
+    var issue_tab = document.getElementById("errors");
+    issue_tab.innerHTML = `<div class="alert alert-danger">An error occured: ${error_map[error]}</div>`;
 }
 
 function display_strftime() {

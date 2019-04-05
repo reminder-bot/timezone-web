@@ -181,7 +181,10 @@ fn create_channel((req, create_form): (HttpRequest<AppState>, Form<CreateChannel
         match guild_check.next() {
             Some(_) => {
                 if !TIMEZONES.contains(&timezone) {
-                    req.reply(http::StatusCode::BAD_REQUEST, "<html><h1>400 Bad Request</h1></html>")
+                    req.reply_builder(http::StatusCode::SEE_OTHER, move |mut r| r
+                        .header("Location", format!("{}?err=No+timezone", index_url).as_str())
+                        .content_type("text/plain")
+                        .body("Redirected"))                
                 }
                 else {
                     client::ClientRequest::post(&format!("{}/guilds/{}/channels", DISCORD_BASE, create_form.guild))
