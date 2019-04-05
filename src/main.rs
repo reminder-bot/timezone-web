@@ -463,7 +463,7 @@ fn main() {
             .finish()
 
     }).workers(4)
-    .bind("localhost:5000")
+    .bind(env::var("BIND_URL").expect("BIND_URL address missing from environment"))
     .expect("Failed to bind to address")
     .run();
 }
