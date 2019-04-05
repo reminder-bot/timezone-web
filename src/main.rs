@@ -191,12 +191,9 @@ fn create_channel((req, create_form): (HttpRequest<AppState>, Form<CreateChannel
                         .header("Authorization", format!("Bot {}", env::var("BOT_TOKEN").unwrap()).as_str())
                         .json(DiscordChannelCreator { name: create_form.name.clone(), r#type: 2 }).unwrap()
                         .send()
-                        .map_err(|m| {
-                            println!("{:?}", m);
-                            Error::from(m)
-                        })
                         .and_then(
                             move |resp| {
+                                println!("eiwofiewofjeiwoje");
                                 resp.json::<DiscordChannel>()
                                     .then(
                                         move |res| {
@@ -221,6 +218,11 @@ fn create_channel((req, create_form): (HttpRequest<AppState>, Form<CreateChannel
                                             }
                                         })
                             })
+                        .or_else(move |_| {
+                            Ok(HttpResponse::SeeOther()
+                                .header("Location", format!("{}?err=Other", req.url_for_static("index").unwrap()).as_str())
+                                .body("Redirected"))
+                        })
                         .responder()
                 }
 
