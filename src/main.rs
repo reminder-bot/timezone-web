@@ -211,8 +211,9 @@ fn create_channel((req, create_form): (HttpRequest<AppState>, Form<CreateChannel
                                                 Err(e) => {
                                                     println!("{:?}", e);
 
-                                                    Ok(HttpResponse::Ok()
-                                                        .body("Bad things have happened"))
+                                                    Ok(HttpResponse::SeeOther()
+                                                        .header("Location", format!("{}{}", index_url, "?err=No+perms").as_str())
+                                                        .body("Redirected"))
                                                 }
                                             }
                                         })
