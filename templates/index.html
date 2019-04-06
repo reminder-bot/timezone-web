@@ -39,8 +39,6 @@
 
 </head>
 <body>
-    {% if logged_in %}
-
     <div id="errors">
     </div>
 
@@ -157,9 +155,5 @@ display_strftime();
 $(".country-lov")[0].onchange = display_strftime;
 
     </script>
-
-    {% else %}
-    <a href="{{ login_redir }}">Log in with Discord</a>
-    {% endif %}
 </body>
 </html>

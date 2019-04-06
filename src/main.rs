@@ -40,6 +40,8 @@ use futures::Future;
 use dotenv::dotenv;
 use rand::thread_rng;
 use rand::Rng;
+use std::time::Duration;
+use std::sync::Arc;
 
 mod models;
 mod templates;
@@ -130,12 +132,12 @@ WHERE
             DiscordGuild { id: id.to_string(), name: name, permissions: 0 }
         }).collect();
 
-        let i = IndexTemplate { logged_in: true, channels: clocks, guilds: guilds, timezones: TIMEZONES, login_redir: login_url, delete_redir: form_redir, create_redir: create_redir };
+        let i = IndexTemplate { channels: clocks, guilds: guilds, timezones: TIMEZONES, delete_redir: form_redir, create_redir: create_redir };
         req.reply(http::StatusCode::OK, i.render().unwrap())
 
     }
     else {
-        let i = IndexTemplate { logged_in: false, channels: vec![], guilds: vec![], timezones: TIMEZONES, login_redir: login_url, delete_redir: form_redir, create_redir: create_redir };
+        let i = Login { login_redir: login_url };
         req.reply(http::StatusCode::OK, i.render().unwrap())
     }
 }
@@ -188,6 +190,7 @@ fn create_channel((req, create_form): (HttpRequest<AppState>, Form<CreateChannel
                 }
                 else {
                     client::ClientRequest::post(&format!("{}/guilds/{}/channels", DISCORD_BASE, create_form.guild))
+                        .timeout(Duration::from_secs(8))
                         .header("Authorization", format!("Bot {}", env::var("BOT_TOKEN").unwrap()).as_str())
                         .json(DiscordChannelCreator { name: create_form.name.clone(), r#type: 2 }).unwrap()
                         .send()
@@ -247,6 +250,11 @@ fn get_all_guilds(req: HttpRequest<AppState>) -> Box<Future<Item = HttpResponse,
     let discord_token: String = req.session().get("access_token").unwrap().unwrap();
     let client_id: u64 = req.session().get("client_id").unwrap().unwrap();
 
+    let index = req.url_for_static("index").unwrap();
+    let error_page = Arc::new(GetGuildsError { home_redir: index.clone().to_string() });
+
+    let error_page1 = error_page.clone();
+
     let mut query = database.prep_exec("SELECT 1 FROM user_guilds WHERE user = :u AND cache_time > UNIX_TIMESTAMP()", params!{"u" => &client_id}).unwrap();
 
     if query.next().is_none() {
@@ -256,17 +264,9 @@ fn get_all_guilds(req: HttpRequest<AppState>) -> Box<Future<Item = HttpResponse,
             .header("Authorization", format!("Bearer {}", discord_token).as_str())
             .finish().unwrap()
             .send()
-            .map_err(|m| {
-                println!("{:?}", m);
-                Error::from(m)
-            })
             .and_then(
                 move |resp| {
                     resp.json::<Vec<DiscordGuild>>()
-                        .map_err(|m| {
-                            println!("{:?}", m);
-                            Error::from(m)
-                        })
                         .and_then(
                             move |body| {
                                 body.iter()
@@ -277,9 +277,21 @@ fn get_all_guilds(req: HttpRequest<AppState>) -> Box<Future<Item = HttpResponse,
                                     });
 
                                 Ok(HttpResponse::SeeOther()
-                                    .header("Location", req.url_for_static("index").unwrap().as_str())
+                                    .header("Location", index.as_str())
                                     .body(""))
                             })
+                        .or_else(
+                            move |_| {
+                                Ok(HttpResponse::InternalServerError()
+                                    .content_type("text/html")
+                                    .body(error_page1.render().unwrap()))
+                            })
+                })
+            .or_else(
+                move |_| {
+                    Ok(HttpResponse::InternalServerError()
+                        .content_type("text/html")
+                        .body(error_page.render().unwrap()))
                 })
             .responder()
     }
