@@ -17,6 +17,7 @@ extern crate urlencoding;
 
 extern crate env_logger;
 
+extern crate chrono;
 extern crate chrono_tz;
 
 extern crate rand;
@@ -31,6 +32,9 @@ use actix_web::{
         },
     },
 };
+
+use chrono_tz::Tz;
+use chrono::prelude::*;
 
 use std::{env, u8};
 use askama::Template;
@@ -182,53 +186,59 @@ fn create_channel((req, create_form): (HttpRequest<AppState>, Form<CreateChannel
 
         match guild_check.next() {
             Some(_) => {
-                if !TIMEZONES.contains(&timezone) {
-                    req.reply_builder(http::StatusCode::SEE_OTHER, move |mut r| r
-                        .header("Location", format!("{}?err=No+timezone", index_url).as_str())
-                        .content_type("text/plain")
-                        .body("Redirected"))                
-                }
-                else {
-                    client::ClientRequest::post(&format!("{}/guilds/{}/channels", DISCORD_BASE, create_form.guild))
-                        .timeout(Duration::from_secs(8))
-                        .header("Authorization", format!("Bot {}", env::var("BOT_TOKEN").unwrap()).as_str())
-                        .json(DiscordChannelCreator { name: create_form.name.clone(), r#type: 2 }).unwrap()
-                        .send()
-                        .and_then(
-                            move |resp| {
-                                println!("eiwofiewofjeiwoje");
-                                resp.json::<DiscordChannel>()
-                                    .then(
-                                        move |res| {
-                                            match res {
-                                                Ok(body) => {
-                                                    database.prep_exec("INSERT INTO clocks (channel, timezone, name, guild) VALUES (:c, :t, :n, :g)",
-                                                        params!{"c" => &body.id, "t" => &create_form.timezone, "n" => &create_form.name, "g" => &create_form.guild}
-                                                    ).unwrap();
+                let t = timezone.parse::<Tz>();
 
-                                                    Ok(HttpResponse::SeeOther()
-                                                        .header("Location", index_url.as_str())
-                                                        .body("Redirected"))
-                                                },
+                match t {
+                    Ok(timezone) => {
+                        let dt = Utc::now().with_timezone(&timezone);
+                        let name = dt.format(&create_form.name).to_string();
 
-                                                Err(e) => {
-                                                    println!("{:?}", e);
+                        client::ClientRequest::post(&format!("{}/guilds/{}/channels", DISCORD_BASE, create_form.guild))
+                            .timeout(Duration::from_secs(8))
+                            .header("Authorization", format!("Bot {}", env::var("BOT_TOKEN").unwrap()).as_str())
+                            .json(DiscordChannelCreator { name: name, r#type: 2 }).unwrap()
+                            .send()
+                            .and_then(
+                                move |resp| {
+                                    resp.json::<DiscordChannel>()
+                                        .then(
+                                            move |res| {
+                                                match res {
+                                                    Ok(body) => {
+                                                        database.prep_exec("INSERT INTO clocks (channel, timezone, name, guild) VALUES (:c, :t, :n, :g)",
+                                                            params!{"c" => &body.id, "t" => &create_form.timezone, "n" => &create_form.name, "g" => &create_form.guild}
+                                                        ).unwrap();
 
-                                                    Ok(HttpResponse::SeeOther()
-                                                        .header("Location", format!("{}{}", index_url, "?err=No+perms").as_str())
-                                                        .body("Redirected"))
+                                                        Ok(HttpResponse::SeeOther()
+                                                            .header("Location", index_url.as_str())
+                                                            .body("Redirected"))
+                                                    },
+
+                                                    Err(e) => {
+                                                        println!("{:?}", e);
+
+                                                        Ok(HttpResponse::SeeOther()
+                                                            .header("Location", format!("{}{}", index_url, "?err=No+perms").as_str())
+                                                            .body("Redirected"))
+                                                    }
                                                 }
-                                            }
-                                        })
+                                            })
+                                })
+                            .or_else(move |_| {
+                                Ok(HttpResponse::SeeOther()
+                                    .header("Location", format!("{}?err=Other", req.url_for_static("index").unwrap()).as_str())
+                                    .body("Redirected"))
                             })
-                        .or_else(move |_| {
-                            Ok(HttpResponse::SeeOther()
-                                .header("Location", format!("{}?err=Other", req.url_for_static("index").unwrap()).as_str())
-                                .body("Redirected"))
-                        })
-                        .responder()
-                }
+                            .responder()
+                    },
 
+                    Err(_) => {
+                        req.reply_builder(http::StatusCode::SEE_OTHER, move |mut r| r
+                            .header("Location", format!("{}?err=No+timezone", index_url).as_str())
+                            .content_type("text/plain")
+                            .body("Redirected"))
+                    },
+                }
             },
 
             None => {
