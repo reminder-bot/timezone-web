@@ -1,6 +1,8 @@
 <html>
 <head>
 
+    <head>Bot o'clock Login</title>
+
     <link rel="stylesheet" href="/static/css/bootstrap.min.css"></link>
 
 </head>
@@ -8,6 +10,8 @@
 
     <br>
     <br>
+    <div id="errors">
+    </div>
     <br>
     <div style="width: 100vw; min-width: 100vw; text-align: center;">
 
@@ -26,6 +30,17 @@
         </div>
 
     </div>
+
+    <script>
+
+const error = urlParams.get('err');
+
+if (error != null) {
+    var issue_tab = document.getElementById("errors");
+    issue_tab.innerHTML = `<div class="alert alert-danger">An error occured trying to get user information. Please login again</div>`;
+}
+
+    </script>
 
 </body>
 </html>

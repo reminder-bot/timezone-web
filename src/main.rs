@@ -319,21 +319,16 @@ fn get_all_guilds(req: HttpRequest<AppState>) -> Box<Future<Item = HttpResponse,
 fn get_user_data(req: HttpRequest<AppState>) -> Box<Future<Item = HttpResponse, Error = Error>> {
     let discord_token: String = req.session().get("access_token").unwrap().unwrap();
 
+    let login_url = req.url_for_static("login").unwrap();
+    let login_url_ = req.url_for_static("login").unwrap();
+
     client::ClientRequest::get(&format!("{}/users/@me", DISCORD_BASE))
         .header("Authorization", format!("Bearer {}", discord_token).as_str())
         .finish().unwrap()
         .send()
-        .map_err(|m| {
-            println!("{:?}", m);
-            Error::from(m)
-        })
         .and_then(
             move |resp| {
                 resp.json::<DiscordUser>()
-                    .map_err(|m| {
-                        println!("{:?}", m);
-                        Error::from(m)
-                    })
                     .and_then(
                         move |user| {
                             req.session().set("client_id", user.id.parse::<u64>().unwrap()).unwrap();
@@ -343,6 +338,20 @@ fn get_user_data(req: HttpRequest<AppState>) -> Box<Future<Item = HttpResponse, 
                                 .content_type("text/html")
                                 .body(""))
                     })
+                    .or_else(
+                        move |_| {
+                            Ok(HttpResponse::SeeOther()
+                                .header("Location", login_url.as_str())
+                                .content_type("text/html")
+                                .body(""))
+                    })
+            })
+        .or_else(
+            move |_| {
+                Ok(HttpResponse::SeeOther()
+                    .header("Location", login_url_.as_str())
+                    .content_type("text/html")
+                    .body(""))
             })
         .responder()
 }
