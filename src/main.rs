@@ -24,8 +24,9 @@ extern crate rand;
 
 use actix_web::{
     server, http, App, HttpResponse, Query, client, AsyncResponder, Error, HttpMessage, HttpRequest, Form, Result, fs,
-    dev::HttpResponseBuilder,
+    dev::HttpResponseBuilder, 
     middleware::{
+        csrf,
         Logger, ErrorHandlers, Response,
         session::{
             RequestSession, SessionStorage, CookieSessionBackend
@@ -96,12 +97,21 @@ const PERMISSION_CHECK: u32 = ADMINISTRATOR | MANAGE_GUILD | MANAGE_CHANNELS;
 
 struct AppState {
     database: mysql::Pool, // not in a cell; pool can be safely cloned to get a connection
-
 }
 
 
 fn create_auth_url<'a>(redirect: &'a str, sid: &'a str) -> String {
     format!("{}/oauth2/authorize?response_type=code&client_id={}&scope=identify%20guilds&redirect_uri={}&state={}", DISCORD_BASE, env::var("CLIENT_ID").unwrap(), uencode(redirect), uencode(sid))
+}
+
+fn generate_noise() -> String {
+    let mut raw_bytes1: [u8; 32] = [0; 32];
+    let mut raw_bytes2: [u8; 32] = [0; 32];
+
+    thread_rng().fill(&mut raw_bytes1);
+    thread_rng().fill(&mut raw_bytes2);
+
+    b64encode(&raw_bytes1) + &b64encode(&raw_bytes2)
 }
 
 
@@ -134,7 +144,7 @@ WHERE
             DiscordGuild { id: id.to_string(), name: name, permissions: 0 }
         }).collect();
 
-        let i = IndexTemplate { channels: clocks, guilds: guilds, delete_redir: form_redir, create_redir: create_redir };
+        let i = IndexTemplate { channels: clocks, guilds: guilds, delete_redir: form_redir, create_redir: create_redir, };
         req.reply(http::StatusCode::OK, i.render().unwrap())
 
     }
@@ -356,13 +366,7 @@ fn get_user_data(req: HttpRequest<AppState>) -> Box<Future<Item = HttpResponse, 
 
 
 fn login(req: HttpRequest<AppState>) -> Box<Future<Item = HttpResponse, Error = Error>> {
-    let mut raw_bytes1: [u8; 32] = [0; 32];
-    let mut raw_bytes2: [u8; 32] = [0; 32];
-
-    thread_rng().fill(&mut raw_bytes1);
-    thread_rng().fill(&mut raw_bytes2);
-
-    let ssid = b64encode(&raw_bytes1) + &b64encode(&raw_bytes2);
+    let ssid = generate_noise();
 
     req.session().set("session_id", &ssid).unwrap();
     let url = req.url_for_static("oauth").unwrap();
@@ -448,13 +452,16 @@ fn main() {
             println!("Session is set to secure");
         }
 
-        App::with_state(AppState { database: mysql_conn })
+        App::with_state(AppState { database: mysql_conn, })
             .middleware(
                 SessionStorage::new(
                     CookieSessionBackend::signed(env::var("SECRET").unwrap().as_bytes())
                         .secure(secure)
                     )
                 )
+            .middleware(
+                csrf::CsrfFilter::new().allowed_origin(env::var("CSRF_ORIGIN").expect("No CSRF origin set"))
+            )
             .middleware(Logger::default())
             .middleware(Logger::new("%a %{User-Agent}i"))
             .middleware(ErrorHandlers::new()
