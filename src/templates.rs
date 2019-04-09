@@ -9,7 +9,6 @@ pub struct IndexTemplate {
     pub delete_redir: String,
     pub create_redir: String,
     pub guilds: Vec<DiscordGuild>,
-    pub timezones: [&'static str; 591],
 }
 
 #[derive(Template)]
