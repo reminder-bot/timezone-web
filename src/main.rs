@@ -184,9 +184,21 @@ WHERE
 
 fn create_channel((req, create_form): (HttpRequest<AppState>, Form<CreateChannel>)) -> Box<Future<Item = HttpResponse, Error = Error>> {
     let index_url = req.url_for_static("index").unwrap();
+    let database = req.state().database.clone();
 
-    if let Some(client_id) = req.session().get::<u64>("client_id").unwrap() {
-        let database = req.state().database.clone();
+    let mut check_query = database.prep_exec("SELECT COUNT(*) FROM clocks WHERE guild = :g", params!{"g" => &create_form.guild}).unwrap();
+
+    let r = mysql::from_row::<(u32)>(check_query.next().unwrap().unwrap());
+
+    let max_channels = env::var("MAX_CLOCKS").unwrap().parse::<u32>().unwrap();
+
+    if r >= max_channels {
+        req.reply_builder(http::StatusCode::SEE_OTHER, move |mut r| r
+            .header("Location", format!("{}?err=Too+many", index_url).as_str())
+            .content_type("text/plain")
+            .body(""))
+    }
+    else if let Some(client_id) = req.session().get::<u64>("client_id").unwrap() {
 
         let timezone = create_form.timezone.split(" ").nth(0).unwrap();
 
