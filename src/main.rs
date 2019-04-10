@@ -426,17 +426,21 @@ fn oauth((query, req): (Query<OAuthQuery>, HttpRequest<AppState>)) -> Box<Future
                 .responder()
         }
         else {
-            let url = req.url_for_static("index").unwrap();
-            let t = BadSession { home_redir: url.to_string(), status: 403 };
+            let index_url = req.url_for_static("index").unwrap();
 
-            req.reply(http::StatusCode::FORBIDDEN, t.render().unwrap())
+            req.reply_builder(http::StatusCode::SEE_OTHER, move |mut r| r
+                .header("Location", format!("{}?err=State+check+failed,+please+try+again", index_url).as_str())
+                .content_type("text/plain")
+                .body(""))
         }
     }
     else {
-        let url = req.url_for_static("index").unwrap();
-        let t = BadSession { home_redir: url.to_string(), status: 400 };
+        let index_url = req.url_for_static("index").unwrap();
 
-        req.reply(http::StatusCode::BAD_REQUEST, t.render().unwrap())
+        req.reply_builder(http::StatusCode::SEE_OTHER, move |mut r| r
+            .header("Location", format!("{}?err=No+session+ID,+try+again", index_url).as_str())
+            .content_type("text/plain")
+            .body(""))
     }
 }
 

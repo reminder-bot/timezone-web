@@ -12,13 +12,6 @@ pub struct IndexTemplate {
 }
 
 #[derive(Template)]
-#[template(path = "bad_session.html")]
-pub struct BadSession {
-    pub home_redir: String,
-    pub status: u16,
-}
-
-#[derive(Template)]
 #[template(path = "login.html")]
 pub struct Login {
     pub login_redir: String,
