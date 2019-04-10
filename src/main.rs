@@ -24,7 +24,7 @@ extern crate rand;
 
 use actix_web::{
     server, http, App, HttpResponse, Query, client, AsyncResponder, Error, HttpMessage, HttpRequest, Form, Result, fs,
-    dev::HttpResponseBuilder, 
+    dev::HttpResponseBuilder, FromRequest,
     middleware::{
         csrf,
         Logger, ErrorHandlers, Response,
@@ -396,51 +396,68 @@ fn login(req: HttpRequest<AppState>) -> Box<Future<Item = HttpResponse, Error = 
 }
 
 
-fn oauth((query, req): (Query<OAuthQuery>, HttpRequest<AppState>)) -> Box<Future<Item = HttpResponse, Error = Error>> {
-    if let Some(ssid) = req.session().get::<String>("session_id").unwrap() {
-        if ssid == query.state {
-            let code = &query.code;
-            let c = TokenRequest::new(code.clone(), req.url_for_static("oauth").unwrap().to_string());
+fn oauth(req: HttpRequest<AppState>) -> Box<Future<Item = HttpResponse, Error = Error>> {
+    let extracted_params = Query::<OAuthQuery>::extract(&req);
 
-            client::ClientRequest::post(format!("{}/oauth2/token", DISCORD_BASE).as_str())
-                .header("Content-Type", "application/x-www-form-urlencoded")
-                .form(c).unwrap()
-                .send()
-                .map_err(|m| {
-                    println!("{:?}", m);
-                    Error::from(m)
-                })
-                .and_then(
-                    move |resp| {
-                        resp.json::<OAuthAccess>()
-                            .from_err()
-                            .and_then(move |body| {
-                                req.session().set("access_token", body.access_token.clone()).unwrap();
+    match extracted_params {
+        Ok(query_wrapper) => {
+            let query = query_wrapper.into_inner();
 
-                                Ok(HttpResponse::build(http::StatusCode::SEE_OTHER)
-                                    .header("Location", req.url_for_static("sync_user").unwrap().as_str())
-                                    .content_type("text/plain")
-                                    .body("You have been logged in. Your browser will redirect you now."))
+            if let Some(ssid) = req.session().get::<String>("session_id").unwrap() {
+                if ssid == query.state {
+                    let code = &query.code;
+                    let c = TokenRequest::new(code.clone(), req.url_for_static("oauth").unwrap().to_string());
+
+                    client::ClientRequest::post(format!("{}/oauth2/token", DISCORD_BASE).as_str())
+                        .header("Content-Type", "application/x-www-form-urlencoded")
+                        .form(c).unwrap()
+                        .send()
+                        .map_err(|m| {
+                            println!("{:?}", m);
+                            Error::from(m)
+                        })
+                        .and_then(
+                            move |resp| {
+                                resp.json::<OAuthAccess>()
+                                    .from_err()
+                                    .and_then(move |body| {
+                                        req.session().set("access_token", body.access_token.clone()).unwrap();
+
+                                        Ok(HttpResponse::build(http::StatusCode::SEE_OTHER)
+                                            .header("Location", req.url_for_static("sync_user").unwrap().as_str())
+                                            .content_type("text/plain")
+                                            .body("You have been logged in. Your browser will redirect you now."))
+                                    })
                             })
-                    })
-                .responder()
-        }
-        else {
-            let index_url = req.url_for_static("index").unwrap();
+                        .responder()
+                }
+                else {
+                    let index_url = req.url_for_static("index").unwrap();
 
+                    req.reply_builder(http::StatusCode::SEE_OTHER, move |mut r| r
+                        .header("Location", format!("{}?err=State+check+failed,+please+try+again", index_url).as_str())
+                        .content_type("text/plain")
+                        .body(""))
+                }
+            }
+            else {
+                let index_url = req.url_for_static("index").unwrap();
+
+                req.reply_builder(http::StatusCode::SEE_OTHER, move |mut r| r
+                    .header("Location", format!("{}?err=No+session+ID,+try+again", index_url).as_str())
+                    .content_type("text/plain")
+                    .body(""))
+            }
+        },
+
+        Err(_) => {
+            let index_url = req.url_for_static("index").unwrap();
+            
             req.reply_builder(http::StatusCode::SEE_OTHER, move |mut r| r
-                .header("Location", format!("{}?err=State+check+failed,+please+try+again", index_url).as_str())
+                .header("Location", format!("{}?err=Login+failed", index_url).as_str())
                 .content_type("text/plain")
                 .body(""))
         }
-    }
-    else {
-        let index_url = req.url_for_static("index").unwrap();
-
-        req.reply_builder(http::StatusCode::SEE_OTHER, move |mut r| r
-            .header("Location", format!("{}?err=No+session+ID,+try+again", index_url).as_str())
-            .content_type("text/plain")
-            .body(""))
     }
 }
 
