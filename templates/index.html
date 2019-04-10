@@ -114,9 +114,23 @@ $('#map').timezonePicker({
 });
             </script>
 
-            <div class="form-group form-elements">
-                <label for="name-formatting">Choose a name/formatting:</label>
-                <input id="name-formatting" name="name" type="text" autocomplete="off" class="form-control" value="%H:%M" maxlength="20" oninput="display_strftime()" required></input>
+            <div class="form-elements">
+                <div class="form-group">
+                    <label for="name-formatting">Choose a name/formatting:</label>
+                    <input id="name-formatting" name="name" type="text" autocomplete="off" class="form-control" value="%H:%M" maxlength="20" oninput="display_strftime()" required></input>
+                </div>
+                <div class="form-group">
+                    <label for="preset-select">Or choose a preset (times are an example):</label>
+                    <select id="preset-select" class="form-control" autocomplete="off" onchange="set_preset()">
+                        <option value="%H:%M">13:10</option>
+                        <option value="%I:%M %p">01:10 PM</option>
+                        <option value="🕗 %H:%M">🕗 13:10</option>
+                        <option value="🕗 %I:%M %p">🕗 01:10 PM</option>
+                        <option value="🕗 %H:%M (%Z)">🕗 13:10 (BST)</option>
+                        <option value="%A">Thursday</option>
+                    </select>
+                </div>
+                <p><em>View all options: <a href="https://strftime.ninja" target="_blank">https://strftime.ninja</a></em></p>
             </div>
 
             <div class="form-group form-elements">
@@ -161,6 +175,11 @@ function display_strftime() {
 
 display_strftime();
 $(".country-lov")[0].onchange = display_strftime;
+
+function set_preset() {
+    document.getElementById("name-formatting").value = document.getElementById("preset-select").value;
+    display_strftime();
+}
 
     </script>
 </body>
