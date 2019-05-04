@@ -10,6 +10,7 @@ extern crate futures;
 
 #[macro_use]
 extern crate serde_derive;
+extern crate serde_json;
 
 extern crate sha2;
 extern crate base64;
@@ -37,7 +38,7 @@ use actix_web::{
 use chrono_tz::Tz;
 use chrono::prelude::*;
 
-use std::{env, u8};
+use std::{env, u8, str};
 use askama::Template;
 use base64::{encode as b64encode};
 use urlencoding::encode as uencode;
@@ -224,10 +225,14 @@ fn create_channel((req, mut create_form): (HttpRequest<AppState>, Form<CreateCha
                             .send()
                             .and_then(
                                 move |resp| {
-                                    resp.json::<DiscordChannel>()
+                                    resp.body()
                                         .then(
-                                            move |res| {
-                                                match res {
+                                            move |body| {
+                                                let b = body.unwrap().to_vec();
+                                                let string = str::from_utf8(&b).unwrap();
+                                                let channel_body: Result<DiscordChannel, serde_json::Error> = serde_json::from_str(&string);
+
+                                                match channel_body {
                                                     Ok(body) => {
                                                         database.prep_exec("INSERT INTO clocks (channel, timezone, name, guild) VALUES (:c, :t, :n, :g)",
                                                             params!{"c" => &body.id, "t" => &create_form.timezone, "n" => &create_form.name, "g" => &create_form.guild}
@@ -239,11 +244,23 @@ fn create_channel((req, mut create_form): (HttpRequest<AppState>, Form<CreateCha
                                                     },
 
                                                     Err(e) => {
+                                                        println!("");
+                                                        println!("=== Errored ===");
+                                                        println!("{}", string);
                                                         println!("{:?}", e);
+                                                        println!("{:?}", create_form);
+                                                        println!("===============");
 
-                                                        Ok(HttpResponse::SeeOther()
-                                                            .header("Location", format!("{}{}", index_url, "?err=No+perms").as_str())
-                                                            .body("Redirected"))
+                                                        if string.contains("rate limit") {
+                                                            Ok(HttpResponse::SeeOther()
+                                                                .header("Location", format!("{}{}", index_url, "?err=Ratelimit").as_str())
+                                                                .body("Redirected"))
+                                                        }
+                                                        else {
+                                                            Ok(HttpResponse::SeeOther()
+                                                                .header("Location", format!("{}{}", index_url, "?err=No+perms").as_str())
+                                                                .body("Redirected"))
+                                                        }
                                                     }
                                                 }
                                             })
