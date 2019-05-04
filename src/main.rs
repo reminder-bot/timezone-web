@@ -182,7 +182,11 @@ WHERE
 }
 
 
-fn create_channel((req, create_form): (HttpRequest<AppState>, Form<CreateChannel>)) -> Box<Future<Item = HttpResponse, Error = Error>> {
+fn create_channel((req, mut create_form): (HttpRequest<AppState>, Form<CreateChannel>)) -> Box<Future<Item = HttpResponse, Error = Error>> {
+    if create_form.name.is_empty() {
+        create_form.name = "%H:%M".to_string();
+    }
+
     let index_url = req.url_for_static("index").unwrap();
     let database = req.state().database.clone();
 
@@ -214,7 +218,7 @@ fn create_channel((req, create_form): (HttpRequest<AppState>, Form<CreateChannel
                         let name = dt.format(&create_form.name).to_string();
 
                         client::ClientRequest::post(&format!("{}/guilds/{}/channels", DISCORD_BASE, create_form.guild))
-                            .timeout(Duration::from_secs(8))
+                            .timeout(Duration::from_secs(20))
                             .header("Authorization", format!("Bot {}", env::var("BOT_TOKEN").unwrap()).as_str())
                             .json(DiscordChannelCreator { name: name, r#type: 2 }).unwrap()
                             .send()
