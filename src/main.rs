@@ -184,20 +184,34 @@ WHERE
 
 
 fn create_channel((req, mut create_form): (HttpRequest<AppState>, Form<CreateChannel>)) -> Box<Future<Item = HttpResponse, Error = Error>> {
+    let index_url = req.url_for_static("index").unwrap();
+
     if create_form.name.is_empty() {
         create_form.name = "%H:%M".to_string();
     }
 
-    let index_url = req.url_for_static("index").unwrap();
+    let o: Option<u8> = req.session().get("p").unwrap();
+
+    if o.is_none() {
+        return req.reply_builder(http::StatusCode::SEE_OTHER, move |mut r| r
+                    .header("Location", format!("{}?err=Other", index_url).as_str())
+                    .body("Redirected"))
+    }
+
+    let client_id: u64 = req.session().get("client_id").unwrap().unwrap();
+
     let database = req.state().database.clone();
 
     let mut check_query = database.prep_exec("SELECT COUNT(*) FROM clocks WHERE guild = :g", params!{"g" => &create_form.guild}).unwrap();
+    let mut check_query_user = database.prep_exec("SELECT COUNT(*) FROM clocks WHERE user = :u", params!{"u" => client_id}).unwrap();
 
     let r = mysql::from_row::<(u32)>(check_query.next().unwrap().unwrap());
+    let r_user = mysql::from_row::<(u32)>(check_query_user.next().unwrap().unwrap());
 
     let max_channels = env::var("MAX_CLOCKS").unwrap().parse::<u32>().unwrap();
+    let max_channels_user = env::var("MAX_CLOCKS_USER").unwrap().parse::<u32>().unwrap();
 
-    if r >= max_channels {
+    if r >= max_channels || r_user >= max_channels_user {
         req.reply_builder(http::StatusCode::SEE_OTHER, move |mut r| r
             .header("Location", format!("{}?err=Too+many", index_url).as_str())
             .content_type("text/plain")
@@ -207,7 +221,7 @@ fn create_channel((req, mut create_form): (HttpRequest<AppState>, Form<CreateCha
 
         let timezone = create_form.timezone.split(" ").nth(0).unwrap();
 
-        let mut guild_check = database.prep_exec("SELECT 1 FROM user_guilds WHERE user = :u AND guild = :g", params!{"u" => client_id, "g" => &create_form.guild}).unwrap();
+        let mut guild_check = database.prep_exec("SELECT 1 FROM user_guilds WHERE user = :u AND guild = :g", params!{"u" => &client_id, "g" => &create_form.guild}).unwrap();
 
         match guild_check.next() {
             Some(_) => {
@@ -234,8 +248,8 @@ fn create_channel((req, mut create_form): (HttpRequest<AppState>, Form<CreateCha
 
                                                 match channel_body {
                                                     Ok(body) => {
-                                                        database.prep_exec("INSERT INTO clocks (channel, timezone, name, guild) VALUES (:c, :t, :n, :g)",
-                                                            params!{"c" => &body.id, "t" => &create_form.timezone, "n" => &create_form.name, "g" => &create_form.guild}
+                                                        database.prep_exec("INSERT INTO clocks (channel, timezone, name, guild, user) VALUES (:c, :t, :n, :g, :u)",
+                                                            params!{"c" => &body.id, "t" => &create_form.timezone, "n" => &create_form.name, "g" => &create_form.guild, "u" => &client_id}
                                                         ).unwrap();
 
                                                         Ok(HttpResponse::SeeOther()
@@ -309,8 +323,6 @@ fn check_premium(req: HttpRequest<AppState>) -> Box<Future<Item = HttpResponse, 
 
             let request_url = format!("{}/guilds/{}/members/{}", DISCORD_BASE, env::var("PATREON_SERVER").unwrap(), client_id);
 
-            println!("{}", request_url);
-
             client::ClientRequest::get(&request_url)
                 .header("Authorization", format!("Bot {}", env::var("BOT_TOKEN").unwrap()))
                 .finish().unwrap()
@@ -320,9 +332,9 @@ fn check_premium(req: HttpRequest<AppState>) -> Box<Future<Item = HttpResponse, 
                         resp.json::<DiscordMember>()
                             .and_then(
                                 move |body| {
-                                    println!("{:?}", body.roles);
-
                                     if body.roles.contains(&env::var("PATREON_ROLE").unwrap()) {
+                                        session.set("p", 1).unwrap();
+
                                         Ok(HttpResponse::SeeOther()
                                             .header("Location", index.as_str())
                                             .body(""))
