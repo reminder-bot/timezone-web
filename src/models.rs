@@ -47,6 +47,11 @@ pub struct DiscordUser {
     pub discriminator: String,
 }
 
+#[derive(Deserialize)]
+pub struct DiscordMember {
+    pub roles: Vec<String>,
+}
+
 #[derive(Deserialize, Debug)]
 pub struct DiscordGuild {
     pub id: String,

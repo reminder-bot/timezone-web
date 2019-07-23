@@ -97,7 +97,7 @@ const PERMISSION_CHECK: u32 = ADMINISTRATOR | MANAGE_GUILD | MANAGE_CHANNELS;
 
 
 struct AppState {
-    database: mysql::Pool, // not in a cell; pool can be safely cloned to get a connection
+    database: mysql::Pool, // not in a cell; pool can be cloned to get a connection
 }
 
 
@@ -295,6 +295,75 @@ fn create_channel((req, mut create_form): (HttpRequest<AppState>, Form<CreateCha
     }
 }
 
+fn check_premium(req: HttpRequest<AppState>) -> Box<Future<Item = HttpResponse, Error = Error>> {
+    let index = req.url_for_static("index").unwrap();
+
+    let r: Option<u64> = req.session().get("client_id").unwrap();
+
+    match r {
+        Some(client_id) => {
+            let session = Arc::new(req.session());
+            let session_ = session.clone();
+
+            let error_page = GetGuildsError { home_redir: index.clone().to_string() };
+
+            let request_url = format!("{}/guilds/{}/members/{}", DISCORD_BASE, env::var("PATREON_SERVER").unwrap(), client_id);
+
+            println!("{}", request_url);
+
+            client::ClientRequest::get(&request_url)
+                .header("Authorization", format!("Bot {}", env::var("BOT_TOKEN").unwrap()))
+                .finish().unwrap()
+                .send()
+                .and_then(
+                    move |resp| {
+                        resp.json::<DiscordMember>()
+                            .and_then(
+                                move |body| {
+                                    println!("{:?}", body.roles);
+
+                                    if body.roles.contains(&env::var("PATREON_ROLE").unwrap()) {
+                                        Ok(HttpResponse::SeeOther()
+                                            .header("Location", index.as_str())
+                                            .body(""))
+                                    }
+                                    else {
+                                        session.clear();
+
+                                        Ok(HttpResponse::PaymentRequired()
+                                            .content_type("text/html")
+                                            .body("<html><h1>Patreon is required to use <em>Bot o'clock</em></h1><br><a href=\"https://patreon.com/jellywx\">View Patreon</a></html>"))    
+                                    }
+                                }
+                            )
+                            .or_else(
+                                move |_| {
+                                    session_.clear();
+
+                                    Ok(HttpResponse::PaymentRequired()
+                                        .content_type("text/html")
+                                        .body("<html><h1>Patreon is required to use <em>Bot o'clock</em></h1><br><a href=\"https://patreon.com/jellywx\">View Patreon</a></html>"))
+                                }
+                            )
+                    }
+                )
+                .or_else(
+                    move |_| {
+                        Ok(HttpResponse::InternalServerError()
+                            .content_type("text/html")
+                            .body(error_page.render().unwrap()))
+                    })
+                .responder()
+        },
+
+        None => {
+            req.reply_builder(http::StatusCode::SEE_OTHER, move |mut r| r
+                .header("Location", index.as_str())
+                .content_type("text/plain")
+                .body(""))
+        }
+    }
+}
 
 fn get_all_guilds(req: HttpRequest<AppState>) -> Box<Future<Item = HttpResponse, Error = Error>> {
     let database = req.state().database.clone();
@@ -302,9 +371,10 @@ fn get_all_guilds(req: HttpRequest<AppState>) -> Box<Future<Item = HttpResponse,
     let client_id: u64 = req.session().get("client_id").unwrap().unwrap();
 
     let index = req.url_for_static("index").unwrap();
-    let error_page = Arc::new(GetGuildsError { home_redir: index.clone().to_string() });
+    let check_premium_route = req.url_for_static("check_premium").unwrap();
 
-    let error_page1 = error_page.clone();
+    let error_page = Arc::new(GetGuildsError { home_redir: index.clone().to_string() });
+    let error_page_ = error_page.clone();
 
     let mut query = database.prep_exec("SELECT 1 FROM user_guilds WHERE user = :u AND cache_time > UNIX_TIMESTAMP()", params!{"u" => &client_id}).unwrap();
 
@@ -328,14 +398,14 @@ fn get_all_guilds(req: HttpRequest<AppState>) -> Box<Future<Item = HttpResponse,
                                     });
 
                                 Ok(HttpResponse::SeeOther()
-                                    .header("Location", index.as_str())
+                                    .header("Location", check_premium_route.as_str())
                                     .body(""))
                             })
                         .or_else(
                             move |_| {
                                 Ok(HttpResponse::InternalServerError()
                                     .content_type("text/html")
-                                    .body(error_page1.render().unwrap()))
+                                    .body(error_page_.render().unwrap()))
                             })
                 })
             .or_else(
@@ -347,9 +417,9 @@ fn get_all_guilds(req: HttpRequest<AppState>) -> Box<Future<Item = HttpResponse,
             .responder()
     }
     else {
-        let index_url = req.url_for_static("index").unwrap();
+        let check_premium_route = req.url_for_static("check_premium").unwrap();
         req.reply_builder(http::StatusCode::SEE_OTHER, move |mut r| r
-            .header("Location", index_url.as_str())
+            .header("Location", check_premium_route.as_str())
             .content_type("text/plain")
             .body("")
         )
@@ -375,7 +445,7 @@ fn get_user_data(req: HttpRequest<AppState>) -> Box<Future<Item = HttpResponse, 
                             req.session().set("client_id", user.id.parse::<u64>().unwrap()).unwrap();
 
                             Ok(HttpResponse::SeeOther()
-                                .header("Location", req.url_for_static("sync").unwrap().as_str())
+                                .header("Location", req.url_for_static("sync_guilds").unwrap().as_str())
                                 .content_type("text/html")
                                 .body(""))
                     })
@@ -533,8 +603,13 @@ fn main() {
                 r.method(http::Method::GET)
                 .with(login)
             })
+            .resource("/check_premium", |r| {
+                r.name("check_premium");
+                r.method(http::Method::GET)
+                .with(check_premium)
+            })
             .resource("/sync_guilds", |r| {
-                r.name("sync");
+                r.name("sync_guilds");
                 r.method(http::Method::GET)
                 .with(get_all_guilds)
             })
