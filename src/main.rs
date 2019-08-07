@@ -27,7 +27,6 @@ use actix_web::{
     server, http, App, HttpResponse, Query, client, AsyncResponder, Error, HttpMessage, HttpRequest, Form, Result, fs,
     dev::HttpResponseBuilder, FromRequest,
     middleware::{
-        csrf,
         Logger, ErrorHandlers, Response,
         session::{
             RequestSession, SessionStorage, CookieSessionBackend
@@ -344,7 +343,7 @@ fn check_premium(req: HttpRequest<AppState>) -> Box<Future<Item = HttpResponse, 
 
                                         Ok(HttpResponse::PaymentRequired()
                                             .content_type("text/html")
-                                            .body("<html><h1>Patreon is required to use <em>Bot o'clock</em></h1><br><a href=\"https://patreon.com/jellywx\">View Patreon</a></html>"))    
+                                            .body("<html><h1>Patreon is required to use <em>Bot o'clock</em></h1><br><a href=\"https://patreon.com/jellywx\">View Patreon</a><a href=\"https://github.com/reminder-bot/timezone-dispatch/releases/tag/release-1\">View self-hosting guide</a></html>"))    
                                     }
                                 }
                             )
@@ -354,7 +353,7 @@ fn check_premium(req: HttpRequest<AppState>) -> Box<Future<Item = HttpResponse, 
 
                                     Ok(HttpResponse::PaymentRequired()
                                         .content_type("text/html")
-                                        .body("<html><h1>Patreon is required to use <em>Bot o'clock</em></h1><br><a href=\"https://patreon.com/jellywx\">View Patreon</a></html>"))
+                                        .body("<html><h1>Patreon is required to use <em>Bot o'clock</em></h1><br><a href=\"https://patreon.com/jellywx\">View Patreon</a><a href=\"https://github.com/reminder-bot/timezone-dispatch/releases/tag/release-1\">View self-hosting guide</a></html>"))
                                 }
                             )
                     }
@@ -595,9 +594,6 @@ fn main() {
                         .secure(secure)
                     )
                 )
-            .middleware(
-                csrf::CsrfFilter::new().allowed_origin(env::var("CSRF_ORIGIN").expect("No CSRF origin set"))
-            )
             .middleware(Logger::default())
             .middleware(Logger::new("%a %{User-Agent}i"))
             .middleware(ErrorHandlers::new()
