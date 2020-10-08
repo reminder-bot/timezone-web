@@ -56,18 +56,18 @@ use crate::templates::*;
 
 
 trait ReplyTo<T> {
-    fn reply(&self, status: http::StatusCode, message: T) -> Box<Future<Item = HttpResponse, Error = Error>>;
+    fn reply(&self, status: http::StatusCode, message: T) -> Box<dyn Future<Item=HttpResponse, Error=Error>>;
 }
 
 trait ReplyBuilder<F> {
-    fn reply_builder(&self, status: http::StatusCode, f: F) -> Box<Future<Item = HttpResponse, Error = Error>>;
+    fn reply_builder(&self, status: http::StatusCode, f: F) -> Box<dyn Future<Item=HttpResponse, Error=Error>>;
 }
 
 
-impl<T: 'static> ReplyTo<T> for HttpRequest<AppState> 
-    where 
+impl<T: 'static> ReplyTo<T> for HttpRequest<AppState>
+    where
         actix_web::Binary: std::convert::From<T> {
-    fn reply(&self, status: http::StatusCode, message: T) -> Box<Future<Item = HttpResponse, Error = Error>> {
+    fn reply(&self, status: http::StatusCode, message: T) -> Box<dyn Future<Item=HttpResponse, Error=Error>> {
         Box::new(self.body().map_err(Error::from).map(move |_f| {
             HttpResponse::build(status)
                 .content_type("text/html")
@@ -79,14 +79,14 @@ impl<T: 'static> ReplyTo<T> for HttpRequest<AppState>
 impl<F: 'static> ReplyBuilder<F> for HttpRequest<AppState>
     where
         F: FnOnce(HttpResponseBuilder) -> HttpResponse {
-    fn reply_builder(&self, status: http::StatusCode, f: F) -> Box<Future<Item = HttpResponse, Error = Error>> {
+    fn reply_builder(&self, status: http::StatusCode, f: F) -> Box<dyn Future<Item=HttpResponse, Error=Error>> {
         Box::new(self.body().map_err(Error::from).map(move |_f| {
             f(HttpResponse::build(status))
         }))
     }
 }
 
-const DISCORD_BASE: &str = "https://discordapp.com/api/v6";
+const DISCORD_BASE: &str = "https://discord.com/api/v6";
 
 const ADMINISTRATOR: u32 = 0x8;
 const MANAGE_GUILD: u32 = 0x20;
@@ -115,25 +115,25 @@ fn generate_noise() -> String {
 }
 
 
-fn index(req: HttpRequest<AppState>) -> Box<Future<Item = HttpResponse, Error = Error>> {
+fn index(req: HttpRequest<AppState>) -> Box<dyn Future<Item=HttpResponse, Error=Error>> {
     let login_url = req.url_for_static("login").unwrap().to_string();
     let form_redir = req.url_for_static("delete_channel").unwrap().to_string();
     let create_redir = req.url_for_static("create_channel").unwrap().to_string();
-    
+
     if let Some(client_id) = req.session().get::<u64>("client_id").unwrap() {
         let database = req.state().database.clone();
 
         let query = database.prep_exec(r#"
-SELECT clocks.channel, clocks.timezone, clocks.name, clocks.guild, user_guilds.guild_name 
+SELECT clocks.channel, clocks.timezone, clocks.name, clocks.guild, user_guilds.guild_name
 FROM clocks, user_guilds
-WHERE 
+WHERE
     user_guilds.user = :u AND
     clocks.guild = user_guilds.guild"#, params!{"u" => &client_id}).unwrap();
 
         let clocks = query.into_iter().map(|row| {
             let (channel, timezone, name, _guild, guild_name) = mysql::from_row::<(u64, String, String, u64, String)>(row.unwrap());
 
-            ClockChannel { id: channel, timezone: timezone, name: name, guild: guild_name }
+            ClockChannel { id: channel, timezone, name, guild: guild_name }
         }).collect();
 
         let guild_query = database.prep_exec(r#"SELECT guild, guild_name FROM user_guilds WHERE user = :u"#, params!{"u" => &client_id}).unwrap();
@@ -141,10 +141,10 @@ WHERE
         let guilds: Vec<DiscordGuild> = guild_query.into_iter().map(|row| {
             let (id, name) = mysql::from_row::<(u64, String)>(row.unwrap());
 
-            DiscordGuild { id: id.to_string(), name: name, permissions: 0 }
+            DiscordGuild { id: id.to_string(), name, permissions: 0 }
         }).collect();
 
-        let i = IndexTemplate { channels: clocks, guilds: guilds, delete_redir: form_redir, create_redir: create_redir, };
+        let i = IndexTemplate { channels: clocks, guilds, delete_redir: form_redir, create_redir, };
         req.reply(http::StatusCode::OK, i.render().unwrap())
 
     }
@@ -155,7 +155,7 @@ WHERE
 }
 
 
-fn delete_channel((req, delete_form): (HttpRequest<AppState>, Form<DeleteChannel>)) -> Box<Future<Item = HttpResponse, Error = Error>> {
+fn delete_channel((req, delete_form): (HttpRequest<AppState>, Form<DeleteChannel>)) -> Box<dyn Future<Item=HttpResponse, Error=Error>> {
     let index_url = req.url_for_static("index").unwrap();
 
     if let Some(client_id) = req.session().get::<u64>("client_id").unwrap() {
@@ -163,9 +163,9 @@ fn delete_channel((req, delete_form): (HttpRequest<AppState>, Form<DeleteChannel
         let clock_id = delete_form.id;
 
         database.prep_exec(r#"
-DELETE FROM clocks 
-WHERE 
-    channel = :id AND 
+DELETE FROM clocks
+WHERE
+    channel = :id AND
     guild IN (SELECT guild FROM user_guilds WHERE user = :u)"#, params!{"id" => clock_id, "u" => client_id}).unwrap();
 
         req.reply_builder(http::StatusCode::SEE_OTHER, move |mut r| r
@@ -182,7 +182,7 @@ WHERE
 }
 
 
-fn create_channel((req, mut create_form): (HttpRequest<AppState>, Form<CreateChannel>)) -> Box<Future<Item = HttpResponse, Error = Error>> {
+fn create_channel((req, mut create_form): (HttpRequest<AppState>, Form<CreateChannel>)) -> Box<dyn Future<Item=HttpResponse, Error=Error>> {
     let index_url = req.url_for_static("index").unwrap();
 
     if create_form.name.is_empty() {
@@ -204,8 +204,8 @@ fn create_channel((req, mut create_form): (HttpRequest<AppState>, Form<CreateCha
     let mut check_query = database.prep_exec("SELECT COUNT(*) FROM clocks WHERE guild = :g", params!{"g" => &create_form.guild}).unwrap();
     let mut check_query_user = database.prep_exec("SELECT COUNT(*) FROM clocks WHERE user = :u", params!{"u" => client_id}).unwrap();
 
-    let r = mysql::from_row::<(u32)>(check_query.next().unwrap().unwrap());
-    let r_user = mysql::from_row::<(u32)>(check_query_user.next().unwrap().unwrap());
+    let r = mysql::from_row::<u32>(check_query.next().unwrap().unwrap());
+    let r_user = mysql::from_row::<u32>(check_query_user.next().unwrap().unwrap());
 
     let max_channels = env::var("MAX_CLOCKS").unwrap().parse::<u32>().unwrap();
     let max_channels_user = env::var("MAX_CLOCKS_USER").unwrap().parse::<u32>().unwrap();
@@ -234,7 +234,7 @@ fn create_channel((req, mut create_form): (HttpRequest<AppState>, Form<CreateCha
                         client::ClientRequest::post(&format!("{}/guilds/{}/channels", DISCORD_BASE, create_form.guild))
                             .timeout(Duration::from_secs(20))
                             .header("Authorization", format!("Bot {}", env::var("BOT_TOKEN").unwrap()).as_str())
-                            .json(DiscordChannelCreator { name: name, r#type: 2 }).unwrap()
+                            .json(DiscordChannelCreator { name, r#type: 2 }).unwrap()
                             .send()
                             .and_then(
                                 move |resp| {
@@ -257,7 +257,7 @@ fn create_channel((req, mut create_form): (HttpRequest<AppState>, Form<CreateCha
                                                     },
 
                                                     Err(e) => {
-                                                        println!("");
+                                                        println!();
                                                         println!("=== Errored ===");
                                                         println!("{}", string);
                                                         println!("{:?}", e);
@@ -308,7 +308,7 @@ fn create_channel((req, mut create_form): (HttpRequest<AppState>, Form<CreateCha
     }
 }
 
-fn check_premium(req: HttpRequest<AppState>) -> Box<Future<Item = HttpResponse, Error = Error>> {
+fn check_premium(req: HttpRequest<AppState>) -> Box<dyn Future<Item=HttpResponse, Error=Error>> {
     let index = req.url_for_static("index").unwrap();
 
     let r: Option<u64> = req.session().get("client_id").unwrap();
@@ -343,7 +343,7 @@ fn check_premium(req: HttpRequest<AppState>) -> Box<Future<Item = HttpResponse, 
 
                                         Ok(HttpResponse::PaymentRequired()
                                             .content_type("text/html")
-                                            .body("<html><h1>Patreon is required to use <em>Bot o'clock</em></h1><br><a href=\"https://patreon.com/jellywx\">View Patreon</a><a href=\"https://github.com/reminder-bot/timezone-dispatch/releases/tag/release-1\">View self-hosting guide</a></html>"))    
+                                            .body("<html><h1>A pre-existing subscription is required to use <em>Bot o'clock</em></h1><a href=\"https://github.com/reminder-bot/timezone-dispatch/releases/tag/release-1\">View self-hosting guide</a></html>"))
                                     }
                                 }
                             )
@@ -353,7 +353,7 @@ fn check_premium(req: HttpRequest<AppState>) -> Box<Future<Item = HttpResponse, 
 
                                     Ok(HttpResponse::PaymentRequired()
                                         .content_type("text/html")
-                                        .body("<html><h1>Patreon is required to use <em>Bot o'clock</em></h1><br><a href=\"https://patreon.com/jellywx\">View Patreon</a><a href=\"https://github.com/reminder-bot/timezone-dispatch/releases/tag/release-1\">View self-hosting guide</a></html>"))
+                                        .body("<html><h1>A pre-existing subscription is required to use <em>Bot o'clock</em></h1><a href=\"https://github.com/reminder-bot/timezone-dispatch/releases/tag/release-1\">View self-hosting guide</a></html>"))
                                 }
                             )
                     }
@@ -376,7 +376,7 @@ fn check_premium(req: HttpRequest<AppState>) -> Box<Future<Item = HttpResponse, 
     }
 }
 
-fn get_all_guilds(req: HttpRequest<AppState>) -> Box<Future<Item = HttpResponse, Error = Error>> {
+fn get_all_guilds(req: HttpRequest<AppState>) -> Box<dyn Future<Item=HttpResponse, Error=Error>> {
     let database = req.state().database.clone();
     let discord_token: String = req.session().get("access_token").unwrap().unwrap();
     let client_id: u64 = req.session().get("client_id").unwrap().unwrap();
@@ -438,7 +438,7 @@ fn get_all_guilds(req: HttpRequest<AppState>) -> Box<Future<Item = HttpResponse,
 }
 
 
-fn get_user_data(req: HttpRequest<AppState>) -> Box<Future<Item = HttpResponse, Error = Error>> {
+fn get_user_data(req: HttpRequest<AppState>) -> Box<dyn Future<Item=HttpResponse, Error=Error>> {
     let discord_token: String = req.session().get("access_token").unwrap().unwrap();
 
     let login_url = req.url_for_static("login").unwrap();
@@ -479,14 +479,14 @@ fn get_user_data(req: HttpRequest<AppState>) -> Box<Future<Item = HttpResponse, 
 }
 
 
-fn login(req: HttpRequest<AppState>) -> Box<Future<Item = HttpResponse, Error = Error>> {
+fn login(req: HttpRequest<AppState>) -> Box<dyn Future<Item=HttpResponse, Error=Error>> {
     let ssid = generate_noise();
 
     req.session().set("session_id", &ssid).unwrap();
     let url = req.url_for_static("oauth").unwrap();
 
     req.reply_builder(http::StatusCode::SEE_OTHER, move |mut h| h
-        .header("Location", 
+        .header("Location",
             create_auth_url(
                 url.as_str(),
                 ssid.as_str()
@@ -498,7 +498,7 @@ fn login(req: HttpRequest<AppState>) -> Box<Future<Item = HttpResponse, Error = 
 }
 
 
-fn oauth(req: HttpRequest<AppState>) -> Box<Future<Item = HttpResponse, Error = Error>> {
+fn oauth(req: HttpRequest<AppState>) -> Box<dyn Future<Item=HttpResponse, Error=Error>> {
     let extracted_params = Query::<OAuthQuery>::extract(&req);
 
     match extracted_params {
@@ -554,7 +554,7 @@ fn oauth(req: HttpRequest<AppState>) -> Box<Future<Item = HttpResponse, Error = 
 
         Err(_) => {
             let index_url = req.url_for_static("index").unwrap();
-            
+
             req.reply_builder(http::StatusCode::SEE_OTHER, move |mut r| r
                 .header("Location", format!("{}?err=Login+failed", index_url).as_str())
                 .content_type("text/plain")
